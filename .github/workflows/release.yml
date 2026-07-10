@@ -1,0 +1,151 @@
+name: Publish tested image and evidence site
+
+on:
+  workflow_run:
+    workflows: ["Platform build, test, container, and evidence"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Successful Platform workflow run ID whose artifacts should be released"
+        required: true
+        type: string
+      source_sha:
+        description: "Commit SHA used to build the tested image"
+        required: true
+        type: string
+
+concurrency:
+  group: regulated-platform-release
+  cancel-in-progress: false
+
+jobs:
+  release-context:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run_id: ${{ steps.context.outputs.run_id }}
+      source_sha: ${{ steps.context.outputs.source_sha }}
+    steps:
+      - id: context
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            run_id="${WORKFLOW_RUN_ID}"
+            source_sha="${WORKFLOW_HEAD_SHA}"
+          else
+            run_id="${INPUT_RUN_ID}"
+            source_sha="${INPUT_SOURCE_SHA}"
+          fi
+          [[ "${run_id}" =~ ^[0-9]+$ ]]
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+          echo "source_sha=${source_sha}" >> "${GITHUB_OUTPUT}"
+          echo "Releasing artifacts from run ${run_id} at commit ${source_sha}"
+      - name: Validate the source workflow run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN_ID: ${{ steps.context.outputs.run_id }}
+          SOURCE_SHA: ${{ steps.context.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > source-run.json
+          jq -e --arg sha "${SOURCE_SHA}" '
+            .conclusion == "success" and
+            .event == "push" and
+            .head_branch == "main" and
+            .head_sha == $sha and
+            .head_repository.full_name == env.GITHUB_REPOSITORY
+          ' source-run.json >/dev/null
+          echo "Validated successful main-branch Platform run ${SOURCE_RUN_ID}."
+
+  publish-ghcr:
+    needs: release-context
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-container-image
+          path: release-image
+          run-id: ${{ needs.release-context.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify and load the tested image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-image
+          sha256sum --check tested-container-image.tar.gz.sha256
+          gzip -dc tested-container-image.tar.gz | docker load
+          docker image inspect "regulated-ai-mlops:${{ needs.release-context.outputs.source_sha }}" >/dev/null
+      - name: Authenticate to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push immutable and release tags
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.release-context.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          source_image="regulated-ai-mlops:${SOURCE_SHA}"
+          for tag in "${SOURCE_SHA}" "service-0.6.0" "platform-0.7.1" latest; do
+            target="ghcr.io/xm2325/regulated_ml_platform:${tag}"
+            docker tag "${source_image}" "${target}"
+            docker push "${target}"
+          done
+
+  deploy-pages:
+    needs: release-context
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-site
+          path: site
+          run-id: ${{ needs.release-context.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify site artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s site/index.html
+          touch site/.nojekyll
+          find site -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy evidence dashboard
+        id: deployment
+        uses: actions/deploy-pages@v4
