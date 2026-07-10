@@ -20,7 +20,7 @@ class PlattCalibratedClassifier(ClassifierMixin, BaseEstimator):
         self.calibrator = calibrator
         self.classes_ = np.array([0, 1])
 
-    def fit(self, features: Any, target: np.ndarray) -> "PlattCalibratedClassifier":
+    def fit(self, features: Any, target: np.ndarray) -> PlattCalibratedClassifier:
         self.base_model.fit(features, target)
         raw_probability = self.base_model.predict_proba(features)[:, 1]
         self.calibrator.fit(_logit(raw_probability), target)
@@ -28,7 +28,7 @@ class PlattCalibratedClassifier(ClassifierMixin, BaseEstimator):
         return self
 
     @classmethod
-    def fit_calibrator(cls, base_model: Any, features: Any, target: np.ndarray) -> "PlattCalibratedClassifier":
+    def fit_calibrator(cls, base_model: Any, features: Any, target: np.ndarray) -> PlattCalibratedClassifier:
         raw_probability = base_model.predict_proba(features)[:, 1]
         calibrator = LogisticRegression(solver="lbfgs", random_state=42)
         calibrator.fit(_logit(raw_probability), target)
