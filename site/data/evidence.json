@@ -1,0 +1,57 @@
+{
+  "release": {
+    "model_version": "0.5.0",
+    "policy_version": "targeted-support-policy-v2",
+    "feature_schema_version": "financial_customer_features_v3",
+    "promotion": "PASS",
+    "data_quality": "PASS",
+    "privacy": "PASS",
+    "drift": "ok",
+    "deployment": "PASS",
+    "reproducibility": "PASS"
+  },
+  "metrics": {
+    "auc": 0.7846927431177726,
+    "brier": 0.1886830413975473,
+    "expected_calibration_error": 0.07665355478395065,
+    "precision_at_policy_threshold": 0.822,
+    "recall_at_policy_threshold": 0.6715686274509803,
+    "precision_at_high_confidence": 0.879245283018868,
+    "load_test_p95_ms": 106.14992000000711
+  },
+  "uncertainty": {
+    "auc": {
+      "lower_95": 0.756220294609507,
+      "median": 0.7857655882745018,
+      "upper_95": 0.8167918947148137
+    },
+    "brier": {
+      "lower_95": 0.17665813576243625,
+      "median": 0.188399685662801,
+      "upper_95": 0.20036990831673948
+    },
+    "precision_at_policy_threshold": {
+      "lower_95": 0.790452402911785,
+      "median": 0.822320943634747,
+      "upper_95": 0.8586287305906793
+    }
+  },
+  "evaluation_design": {
+    "split_method": "deterministic_customer_hash",
+    "model_selection": "validation",
+    "threshold_selection": "validation",
+    "final_evaluation": "test"
+  },
+  "champion_challenger": {
+    "status": "PROMOTE_CHAMPION",
+    "champion": "random_forest",
+    "challenger": "logistic_regression",
+    "auc_delta": 0.04498927584180246
+  },
+  "links": {
+    "release_pack": "../docs/release_approval_pack.md",
+    "model_report": "../reports/model_evaluation.md",
+    "promotion_gate": "../reports/promotion_gate.md",
+    "model_contract": "../docs/model_contract.md"
+  }
+}
