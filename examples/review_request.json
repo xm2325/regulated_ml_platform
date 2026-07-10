@@ -1,0 +1,13 @@
+{
+  "customer_id": "C_REVIEW_DEMO",
+  "request_id": "request-review-demo-0001",
+  "age": 72,
+  "annual_income": 42000,
+  "cash_balance": 68000,
+  "investment_balance": 16000,
+  "debt_balance": 9000,
+  "risk_score": 0.38,
+  "recent_activity_count": 2,
+  "account_type": "isa",
+  "employment_status": "retired"
+}
