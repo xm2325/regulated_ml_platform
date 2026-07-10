@@ -90,7 +90,6 @@ jobs:
     permissions:
       actions: read
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -140,15 +139,23 @@ jobs:
       - name: Stop after a kind failure
         if: steps.kind_smoke.outcome == 'failure'
         run: exit 1
-      - name: Publish the tested image to GHCR
+      - name: Export the exact tested image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          for tag in "${IMAGE_TAG}" "0.6.0" latest; do
-            docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${tag}"
-            docker push "ghcr.io/xm2325/regulated_ml_platform:${tag}"
-          done
+          set -euo pipefail
+          mkdir -p release-image
+          docker image inspect "${IMAGE_NAME}:${IMAGE_TAG}" > release-image/image-inspect.json
+          docker save "${IMAGE_NAME}:${IMAGE_TAG}" | gzip -1 > release-image/tested-container-image.tar.gz
+          sha256sum release-image/tested-container-image.tar.gz > release-image/tested-container-image.tar.gz.sha256
+      - name: Upload tested image for release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-container-image
+          path: release-image/
+          retention-days: 3
+          if-no-files-found: error
 
   registry-integration:
     needs: evidence
@@ -182,27 +189,3 @@ jobs:
           name: registry-integration-evidence
           path: reports/registry_integration/
           retention-days: 14
-
-  deploy-pages:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: evidence
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: generated-site
-          path: site
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-      - name: Deploy evidence dashboard
-        id: deployment
-        uses: actions/deploy-pages@v4
