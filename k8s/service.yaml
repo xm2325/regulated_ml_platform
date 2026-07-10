@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: regulated-ai-mlops
+  labels:
+    app: regulated-ai-mlops
+spec:
+  selector:
+    app: regulated-ai-mlops
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: http
+  type: ClusterIP
