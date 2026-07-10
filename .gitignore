@@ -17,3 +17,9 @@ models/*.joblib
 models/candidates/*.joblib
 reports/batch_predictions.csv
 reports/test_predictions.csv
+
+# Local MLflow registry state and synchronized releases
+registry-sync/
+reports/registry_integration/
+mlruns/
+mlartifacts/

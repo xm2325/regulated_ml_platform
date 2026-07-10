@@ -1,0 +1,14 @@
+tracking_uri_env: MLFLOW_TRACKING_URI
+registry_uri_env: MLFLOW_REGISTRY_URI
+experiment_name: regulated-targeted-support
+registered_model_name: regulated-targeted-support-model
+aliases:
+  champion: champion
+  challenger: challenger
+  rollback: rollback
+controls:
+  registration_alias: challenger
+  promotion_requires_gate_status: PASS
+  promotion_requires_release_recommendation: eligible_for_controlled_release
+  save_previous_champion_as: rollback
+  rollback_failed_version_alias: challenger
