@@ -1,0 +1,78 @@
+name: Docker build and smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "docker/**"
+      - "models/**"
+      - "config/**"
+      - "requirements-runtime.txt"
+      - ".github/workflows/docker-build.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Restore source and generate model artifacts
+        run: |
+          make restore
+          make data features train contract openapi
+      - uses: docker/setup-buildx-action@v3
+      - name: Build local image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          push: false
+          tags: regulated-ai-mlops:${{ github.sha }}
+      - name: Run live readiness smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name regulated-ai-api -p 8000:8000 regulated-ai-mlops:${GITHUB_SHA}
+          trap 'docker logs regulated-ai-api || true; docker stop regulated-ai-api || true' EXIT
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/ready; then
+              curl --fail --silent http://127.0.0.1:8000/version
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Login to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish versioned image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/xm2325/regulated_ml_platform:0.5.0
+            ghcr.io/xm2325/regulated_ml_platform:${{ github.sha }}
+            ghcr.io/xm2325/regulated_ml_platform:latest
