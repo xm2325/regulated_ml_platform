@@ -52,6 +52,7 @@ jobs:
           make lint
           make security
           make audit
+          make audit-registry
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -148,6 +149,39 @@ jobs:
             docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${tag}"
             docker push "ghcr.io/xm2325/regulated_ml_platform:${tag}"
           done
+
+  registry-integration:
+    needs: evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: models
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-evidence
+          path: .
+      - name: Inspect registry release inputs
+        run: |
+          test -s models/model.joblib
+          test -s models/metadata.json
+          test -s reports/model_metrics.json
+          test -s reports/promotion_gate.json
+      - name: Exercise PostgreSQL, MinIO, MLflow, aliases, promotion, rollback, and sync
+        run: bash scripts/registry_stack_smoke.sh
+      - name: Upload registry integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-integration-evidence
+          path: reports/registry_integration/
+          retention-days: 14
 
   deploy-pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

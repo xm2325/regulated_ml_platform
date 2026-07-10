@@ -1,2 +1,2 @@
 -r requirements-runtime.lock
-mlflow>=3.0,<4.0
+-r requirements-mlflow.lock

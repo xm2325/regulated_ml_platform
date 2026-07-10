@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+
+RUN groupadd --gid 10001 mlflow && useradd --uid 10001 --gid mlflow --home-dir /tmp mlflow
+WORKDIR /opt/mlflow
+COPY requirements-mlflow.lock ./requirements-mlflow.lock
+RUN python -m pip install --no-cache-dir -r requirements-mlflow.lock
+USER 10001:10001
+EXPOSE 5000
+ENTRYPOINT ["mlflow", "server"]
