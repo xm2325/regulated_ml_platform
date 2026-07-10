@@ -73,7 +73,26 @@ jobs:
       - name: Run automated tests
         run: make test
       - name: Run Ruff lint
-        run: make lint
+        id: ruff_lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p reports
+          set +e
+          make lint > reports/ruff-step.log 2>&1
+          status=$?
+          cat reports/ruff-step.log
+          exit $status
+      - name: Upload Ruff diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-diagnostic-log
+          path: reports/ruff-step.log
+          retention-days: 7
+      - name: Stop after a Ruff failure
+        if: steps.ruff_lint.outcome == 'failure'
+        run: exit 1
       - name: Run Bandit high-severity checks
         run: make security
       - name: Audit locked runtime dependencies
