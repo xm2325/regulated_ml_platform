@@ -1,0 +1,10 @@
+auc_min: 0.75
+brier_max: 0.20
+ece_max: 0.08
+high_conf_precision_min: 0.80
+policy_precision_min: 0.80
+employment_support_rate_gap_max: 0.35
+age_support_rate_gap_max: 0.35
+load_test_p95_ms_max: 250
+privacy_status_required: PASS
+data_quality_status_required: PASS

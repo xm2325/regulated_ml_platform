@@ -1,0 +1,13 @@
+policy_version: targeted-support-policy-v2
+score_threshold_source: validation_split
+hard_safety_gates:
+  debt_to_income_max: 0.85
+manual_review:
+  threshold_margin: 0.05
+  high_value_assets: 100000
+  older_customer_age: 75
+consumer_actions:
+  - no_support
+  - cash_buffer_warning
+  - investment_support
+  - risk_review
