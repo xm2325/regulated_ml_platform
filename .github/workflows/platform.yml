@@ -72,11 +72,12 @@ jobs:
         run: make openapi sbom manifest approval site
       - name: Run automated tests
         run: make test
-      - name: Lint, static security, and dependency audit
-        run: |
-          make lint
-          make security
-          make audit
+      - name: Run Ruff lint
+        run: make lint
+      - name: Run Bandit high-severity checks
+        run: make security
+      - name: Audit locked runtime dependencies
+        run: make audit
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
