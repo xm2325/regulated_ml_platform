@@ -1,3 +1,4 @@
+# Explicit bootstrap trigger after the reviewed merge.
 name: Bootstrap and validate platform
 
 on:
