@@ -41,81 +41,17 @@ jobs:
         run: make train
       - name: Generate monitoring and governance reports
         run: make reports contract
-      - name: Run batch scoring
-        id: batch_scoring
-        continue-on-error: true
-        shell: bash
-        run: |
-          mkdir -p reports
-          set +e
-          make batch > reports/batch-step.log 2>&1
-          status=$?
-          cat reports/batch-step.log
-          exit $status
-      - name: Upload batch diagnostic log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: batch-diagnostic-log
-          path: reports/batch-step.log
-          retention-days: 7
-      - name: Stop after a batch failure
-        if: steps.batch_scoring.outcome == 'failure'
-        run: exit 1
-      - name: Run API load test
-        run: make load
-      - name: Validate deployment controls
-        run: make deployment
-      - name: Run incident drill
-        run: make incident
+      - name: Run batch scoring and operational controls
+        run: make batch load deployment incident
       - name: Generate interface, SBOM, release pack, and site
         run: make openapi sbom manifest approval site
       - name: Run automated tests
         run: make test
-      - name: Run Ruff lint
-        id: ruff_lint
-        continue-on-error: true
-        shell: bash
+      - name: Run quality and supply-chain gates
         run: |
-          mkdir -p reports
-          set +e
-          make lint > reports/ruff-step.log 2>&1
-          status=$?
-          cat reports/ruff-step.log
-          exit $status
-      - name: Upload Ruff diagnostic log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ruff-diagnostic-log
-          path: reports/ruff-step.log
-          retention-days: 7
-      - name: Stop after a Ruff failure
-        if: steps.ruff_lint.outcome == 'failure'
-        run: exit 1
-      - name: Run Bandit high-severity checks
-        run: make security
-      - name: Audit locked runtime dependencies
-        id: dependency_audit
-        continue-on-error: true
-        shell: bash
-        run: |
-          mkdir -p reports
-          set +e
-          make audit > reports/pip-audit-step.log 2>&1
-          status=$?
-          cat reports/pip-audit-step.log
-          exit $status
-      - name: Upload dependency audit log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-audit-log
-          path: reports/pip-audit-step.log
-          retention-days: 7
-      - name: Stop after dependency audit failure
-        if: steps.dependency_audit.outcome == 'failure'
-        run: exit 1
+          make lint
+          make security
+          make audit
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -160,8 +96,28 @@ jobs:
         with:
           name: model-artifacts
           path: models
+      - name: Inspect downloaded model artifacts
+        run: find models -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
       - name: Build image once
-        run: docker build -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+        id: docker_build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          docker build --progress=plain -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" . > docker-build.log 2>&1
+          status=$?
+          cat docker-build.log
+          exit $status
+      - name: Upload Docker build diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-build-diagnostic-log
+          path: docker-build.log
+          retention-days: 7
+      - name: Stop after a Docker build failure
+        if: steps.docker_build.outcome == 'failure'
+        run: exit 1
       - name: Live container smoke test
         shell: bash
         run: |
@@ -215,12 +171,10 @@ jobs:
         shell: bash
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${IMAGE_TAG}"
-          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:0.6.0"
-          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:latest"
-          docker push "ghcr.io/xm2325/regulated_ml_platform:${IMAGE_TAG}"
-          docker push "ghcr.io/xm2325/regulated_ml_platform:0.6.0"
-          docker push "ghcr.io/xm2325/regulated_ml_platform:latest"
+          for tag in "${IMAGE_TAG}" "0.6.0" latest; do
+            docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${tag}"
+            docker push "ghcr.io/xm2325/regulated_ml_platform:${tag}"
+          done
 
   deploy-pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
