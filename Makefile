@@ -1,4 +1,7 @@
-.PHONY: data features train reports quality gate contract batch load deployment incident openapi manifest approval site test lint security serve docker all
+.PHONY: restore data features train reports quality gate contract batch load deployment incident openapi manifest approval site test lint security serve docker all
+
+restore:
+	bash scripts/restore_source.sh
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -68,4 +71,4 @@ serve:
 docker:
 	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:0.5.0 .
 
-all: data features train reports contract batch load deployment incident openapi manifest approval site test
+all: restore data features train reports contract batch load deployment incident openapi manifest approval site test
