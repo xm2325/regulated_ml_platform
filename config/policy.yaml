@@ -1,4 +1,4 @@
-policy_version: targeted-support-policy-v2
+policy_version: targeted-support-policy-v3
 score_threshold_source: validation_split
 hard_safety_gates:
   debt_to_income_max: 0.85
