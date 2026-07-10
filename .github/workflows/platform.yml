@@ -35,8 +35,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-      - name: Build one reproducible evidence set
-        run: make evidence
+      - name: Generate dated synthetic data and features
+        run: make data features
+      - name: Train, calibrate, and evaluate out of time
+        run: make train
+      - name: Generate monitoring and governance reports
+        run: make reports contract
+      - name: Exercise batch and operational controls
+        run: make batch load deployment incident
+      - name: Generate interface, SBOM, release pack, and site
+        run: make openapi sbom manifest approval site
+      - name: Run automated tests
+        run: make test
       - name: Lint, static security, and dependency audit
         run: |
           make lint
