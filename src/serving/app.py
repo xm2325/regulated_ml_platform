@@ -2,209 +2,148 @@ from __future__ import annotations
 
 import time
 import uuid
-from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-from pydantic import ValidationError
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
-from src.core.audit import emit_decision_audit
 from src.core.config import settings
 from src.core.telemetry import log_event
-from src.serving.predictor import explain_request, load_artifacts, predict_request
-from src.serving.review_workflow import audit_event_id, review_route
-from src.serving.schemas import (
-    ExplainResponse,
-    PredictionRequest,
-    PredictionResponse,
-    ReviewRouteResponse,
-    ShadowPredictionResponse,
-)
-from src.serving.shadow import shadow_predict
-
-REQUEST_COUNT = Counter("regulated_ai_requests_total", "Total API requests", ["method", "path", "status"])
-REQUEST_LATENCY = Histogram("regulated_ai_request_latency_seconds", "Request latency", ["method", "path"])
-PREDICTION_COUNT = Counter("regulated_ai_predictions_total", "Prediction results", ["action", "confidence"])
-REVIEW_ROUTE_COUNT = Counter("regulated_ai_review_routes_total", "Review routing decisions", ["route"])
-HARD_SAFETY_GATE_COUNT = Counter("regulated_ai_hard_safety_gate_total", "Hard safety-gate triggers")
-
-
-def _decision_contract() -> dict[str, Any]:
-    _, metadata = load_artifacts()
-    return {
-        "contract_version": "model-contract-v1",
-        "model_version": str(metadata["model_version"]),
-        "policy_version": str(metadata["policy_version"]),
-        "feature_schema_version": str(metadata["feature_schema_version"]),
-        "policy_threshold": float(metadata["policy_threshold"]),
-        "allowed_actions": ["no_support", "cash_buffer_warning", "investment_support", "risk_review"],
-        "review_routes": ["auto_serve", "manual_review"],
-        "decision_fields": [
-            "decision_id",
-            "audit_event_id",
-            "model_version",
-            "policy_version",
-            "feature_schema_version",
-            "support_probability",
-            "recommended_action",
-            "review_route",
-        ],
-    }
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    load_artifacts()
-    log_event("service_start", service=settings.service_name, version=settings.service_version, environment=settings.environment)
-    yield
-    log_event("service_stop", service=settings.service_name, version=settings.service_version)
-
+from src.serving.predictor import ModelPredictor
+from src.serving.review_workflow import review_route
+from src.serving.schemas import ExplainResponse, PredictionRequest, PredictionResponse, ReviewRouteResponse, ShadowPredictionResponse
 
 app = FastAPI(
     title="Regulated AI MLOps Platform",
     version=settings.service_version,
-    description=(
-        "Production-style synthetic financial AI service with separate model and policy layers, human review routing, audit identifiers, "
-        "Prometheus metrics, and champion-challenger shadow scoring."
-    ),
-    lifespan=lifespan,
+    description="A synthetic regulated-finance MLOps reference implementation with explicit model, policy, review, and audit layers.",
 )
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[],
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Request-ID"],
-)
+predictor = ModelPredictor()
+
+PREDICTION_REQUEST_COUNT = Counter("prediction_request_count", "Number of prediction requests")
+PREDICTION_ERROR_COUNT = Counter("prediction_error_count", "Number of prediction errors")
+PREDICTION_LATENCY = Histogram("prediction_latency_seconds", "Prediction request latency")
+HTTP_REQUESTS = Counter("regulated_ai_http_requests_total", "HTTP requests", ["method", "path", "status"])
+HTTP_LATENCY = Histogram("regulated_ai_http_request_duration_seconds", "HTTP request duration", ["method", "path"])
+DECISION_COUNT = Counter("regulated_ai_decisions_total", "Model-policy decisions", ["action", "review_route"])
+MODEL_READY = Gauge("regulated_ai_model_ready", "Whether the production model is loaded")
+MODEL_READY.set(1 if predictor.model is not None else 0)
 
 
 @app.middleware("http")
-async def telemetry_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+async def request_observability(request: Request, call_next):  # type: ignore[no-untyped-def]
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    request.state.request_id = request_id
     start = time.perf_counter()
+    status = 500
     try:
         response = await call_next(request)
+        status = response.status_code
     except Exception:
-        latency = time.perf_counter() - start
-        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status="500").inc()
-        REQUEST_LATENCY.labels(method=request.method, path=request.url.path).observe(latency)
-        log_event("request_failed", request_id=request_id, method=request.method, path=request.url.path, latency_ms=round(latency * 1000, 3))
+        log_event("http_request_failed", request_id=request_id, method=request.method, path=request.url.path)
         raise
-    latency = time.perf_counter() - start
-    REQUEST_COUNT.labels(method=request.method, path=request.url.path, status=str(response.status_code)).inc()
-    REQUEST_LATENCY.labels(method=request.method, path=request.url.path).observe(latency)
+    finally:
+        duration = time.perf_counter() - start
+        HTTP_REQUESTS.labels(request.method, request.url.path, str(status)).inc()
+        HTTP_LATENCY.labels(request.method, request.url.path).observe(duration)
+        log_event(
+            "http_request_completed",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status=status,
+            duration_ms=round(duration * 1000, 3),
+        )
     response.headers["X-Request-ID"] = request_id
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Cache-Control"] = "no-store"
-    log_event("request_complete", request_id=request_id, method=request.method, path=request.url.path, status=response.status_code, latency_ms=round(latency * 1000, 3))
+    response.headers["X-Service-Version"] = settings.service_version
     return response
-
-
-@app.exception_handler(ValidationError)
-async def validation_error_handler(_: Request, exc: ValidationError):
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    try:
-        _, metadata = load_artifacts()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
-        "status": "ok",
-        "service": settings.service_name,
+        "status": "ok" if predictor.model is not None else "model_missing",
         "service_version": settings.service_version,
-        "model_version": metadata["model_version"],
-        "policy_version": metadata["policy_version"],
-        "feature_schema_version": metadata["feature_schema_version"],
+        "model_version": predictor.model_version,
+        "policy_threshold": predictor.policy_threshold,
     }
 
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
-    try:
-        load_artifacts()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"status": "ready"}
+def ready() -> dict[str, Any]:
+    return {"ready": predictor.model is not None, "model_loaded": predictor.model is not None, "model_version": predictor.model_version}
 
 
 @app.get("/version")
 def version() -> dict[str, Any]:
-    _, metadata = load_artifacts()
     return {
         "service_version": settings.service_version,
-        "model_version": metadata["model_version"],
-        "policy_version": metadata["policy_version"],
-        "feature_schema_version": metadata["feature_schema_version"],
-        "policy_threshold": metadata["policy_threshold"],
-        "selected_model": metadata["selected_model"],
+        "model_version": predictor.model_version,
+        "policy_version": predictor.policy.version,
+        "feature_schema_version": predictor.feature_schema_version,
+        "environment": settings.environment,
     }
 
 
 @app.get("/decision-contract")
 def decision_contract() -> dict[str, Any]:
-    return _decision_contract()
+    return {
+        "contract_version": "decision-contract-v1",
+        "model_version": predictor.model_version,
+        "policy_version": predictor.policy.version,
+        "feature_schema_version": predictor.feature_schema_version,
+        "score_range": [0.0, 1.0],
+        "actions": ["no_support", "cash_buffer_warning", "investment_support", "risk_review"],
+        "review_routes": ["auto_serve", "manual_review"],
+        "audit_fields": ["decision_id", "audit_event_id", "model_version", "policy_version", "feature_schema_version"],
+        "boundary": "Synthetic engineering demonstration; not financial advice.",
+    }
 
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(payload: PredictionRequest, request: Request) -> PredictionResponse:
-    result = predict_request(payload)
-    review = review_route(payload, result)
-    result.update(
-        {
-            "review_route": review["review_route"],
-            "review_reasons": review["review_reasons"],
-            "audit_event_id": review["audit_event_id"],
-        }
-    )
-    PREDICTION_COUNT.labels(action=result["recommended_action"], confidence=result["confidence"]).inc()
-    REVIEW_ROUTE_COUNT.labels(route=result["review_route"]).inc()
-    if result["hard_safety_gate_triggered"]:
-        HARD_SAFETY_GATE_COUNT.inc()
-    emit_decision_audit(
-        {
-            "audit_event_id": result["audit_event_id"],
-            "decision_id": result["decision_id"],
-            "request_id": request.state.request_id,
-            "customer_id": payload.customer_id,
-            "model_version": result["model_version"],
-            "policy_version": result["policy_version"],
-            "feature_schema_version": result["feature_schema_version"],
-            "recommended_action": result["recommended_action"],
-            "review_route": result["review_route"],
-            "hard_safety_gate_triggered": result["hard_safety_gate_triggered"],
-        }
-    )
-    return PredictionResponse(**result)
+def predict(request: PredictionRequest) -> dict[str, Any]:
+    PREDICTION_REQUEST_COUNT.inc()
+    start = time.perf_counter()
+    try:
+        result = predictor.predict(request)
+        DECISION_COUNT.labels(result["recommended_action"], result["review_route"]).inc()
+        return result
+    except Exception as exc:
+        PREDICTION_ERROR_COUNT.inc()
+        raise HTTPException(status_code=500, detail="Prediction failed. Inspect structured service logs using the request ID.") from exc
+    finally:
+        PREDICTION_LATENCY.observe(time.perf_counter() - start)
 
 
 @app.post("/explain", response_model=ExplainResponse)
-def explain(payload: PredictionRequest) -> ExplainResponse:
-    result = explain_request(payload)
-    prediction = predict_request(payload)
-    result["audit_event_id"] = audit_event_id(payload, prediction)
-    return ExplainResponse(**result)
+def explain(request: PredictionRequest) -> dict[str, Any]:
+    result = predictor.predict(request)
+    return {
+        "customer_id": request.customer_id,
+        "decision_id": result["decision_id"],
+        "reason_codes": result["reason_codes"],
+        "policy_reasons": result["policy_reasons"],
+        "explanation": (
+            "The model score is interpreted by a separate policy layer. Reason codes describe input and score signals; "
+            "policy reasons describe why the action was chosen. This is not financial advice."
+        ),
+        "model_version": result["model_version"],
+        "policy_version": result["policy_version"],
+        "audit_event_id": result["audit_event_id"],
+    }
 
 
 @app.post("/review-route", response_model=ReviewRouteResponse)
-def route_for_review(payload: PredictionRequest) -> ReviewRouteResponse:
-    prediction = predict_request(payload)
-    return ReviewRouteResponse(**review_route(payload, prediction))
+def route_for_review(request: PredictionRequest) -> dict[str, Any]:
+    return review_route(request, predictor.predict(request))
 
 
 @app.post("/shadow-predict", response_model=ShadowPredictionResponse)
-def shadow(payload: PredictionRequest) -> ShadowPredictionResponse:
-    champion = predict_request(payload)
-    return ShadowPredictionResponse(**shadow_predict(payload, champion))
+def shadow_predict(request: PredictionRequest) -> dict[str, Any]:
+    from src.serving.shadow import shadow_predict as run_shadow_predict
+
+    return run_shadow_predict(request, predictor)
 
 
 @app.get("/metrics")
 def metrics() -> Response:
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
