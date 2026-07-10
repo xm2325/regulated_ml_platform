@@ -96,7 +96,26 @@ jobs:
       - name: Run Bandit high-severity checks
         run: make security
       - name: Audit locked runtime dependencies
-        run: make audit
+        id: dependency_audit
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p reports
+          set +e
+          make audit > reports/pip-audit-step.log 2>&1
+          status=$?
+          cat reports/pip-audit-step.log
+          exit $status
+      - name: Upload dependency audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-log
+          path: reports/pip-audit-step.log
+          retention-days: 7
+      - name: Stop after dependency audit failure
+        if: steps.dependency_audit.outcome == 'failure'
+        run: exit 1
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
