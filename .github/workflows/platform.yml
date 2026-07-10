@@ -42,7 +42,26 @@ jobs:
       - name: Generate monitoring and governance reports
         run: make reports contract
       - name: Run batch scoring
-        run: make batch
+        id: batch_scoring
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p reports
+          set +e
+          make batch > reports/batch-step.log 2>&1
+          status=$?
+          cat reports/batch-step.log
+          exit $status
+      - name: Upload batch diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch-diagnostic-log
+          path: reports/batch-step.log
+          retention-days: 7
+      - name: Stop after a batch failure
+        if: steps.batch_scoring.outcome == 'failure'
+        run: exit 1
       - name: Run API load test
         run: make load
       - name: Validate deployment controls
