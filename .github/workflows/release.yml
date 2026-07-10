@@ -142,7 +142,7 @@ jobs:
           test -s site/index.html
           touch site/.nojekyll
           find site -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
