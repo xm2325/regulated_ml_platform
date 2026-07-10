@@ -11,6 +11,7 @@ import pandas as pd
 
 from src.core.config import settings
 from src.serving.policy import TargetedSupportPolicy
+from src.serving.review_workflow import review_route
 from src.serving.schemas import PredictionRequest
 
 
@@ -101,16 +102,22 @@ class ModelPredictor:
             reasons.append("below_policy_threshold")
         return reasons or ["combined_model_factors"]
 
+    def request_to_frame(self, request: PredictionRequest) -> pd.DataFrame:
+        return feature_row(request)
+
     def probability(self, request: PredictionRequest) -> float:
         if self.model is None:
             raise RuntimeError("Model artifact is not loaded")
-        return float(np.asarray(self.model.predict_proba(feature_row(request)))[0, 1])
+        return float(np.asarray(self.model.predict_proba(self.request_to_frame(request)))[0, 1])
+
+    def action(self, request: PredictionRequest, probability: float) -> str:
+        return self.policy.decide(request, probability, self.policy_threshold).action
 
     def predict(self, request: PredictionRequest) -> dict[str, Any]:
         probability = self.probability(request)
         threshold = self.policy_threshold
         policy_decision = self.policy.decide(request, probability, threshold)
-        return {
+        result = {
             "customer_id": request.customer_id,
             "decision_id": f"decision_{uuid.uuid4().hex[:20]}",
             "support_probability": round(probability, 6),
@@ -124,6 +131,8 @@ class ModelPredictor:
             "feature_schema_version": self.feature_schema_version,
             "policy_threshold": threshold,
         }
+        result.update(review_route(request, result))
+        return result
 
 
 _PREDICTOR: ModelPredictor | None = None
@@ -163,6 +172,7 @@ def explain_request(request: PredictionRequest) -> dict[str, Any]:
         ),
         "model_version": result["model_version"],
         "policy_version": result["policy_version"],
+        "audit_event_id": result["audit_event_id"],
     }
 
 
