@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regulated AI MLOps Platform</title>
+  <style>
+    :root{--ink:#172033;--muted:#62708a;--line:#dce3ef;--paper:#fff;--soft:#f5f7fb;--good:#146c43;--warn:#945a00;--accent:#3156d3}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--soft);line-height:1.55}
+    a{color:var(--accent)} .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 72px}.hero,.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 30px rgba(23,32,51,.05)}
+    .hero{padding:36px}.eyebrow{font-size:.82rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:700}.hero h1{font-size:clamp(2rem,5vw,4rem);line-height:1.05;margin:.3rem 0 1rem}.lead{font-size:1.15rem;max-width:850px;color:var(--muted)}
+    .status{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border-radius:999px;background:#eaf7ef;color:var(--good);font-weight:700}.status:before{content:"";width:9px;height:9px;border-radius:50%;background:var(--good)}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0}.metric{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px}.metric strong{display:block;font-size:1.7rem}.metric span{color:var(--muted);font-size:.9rem}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px}.card{padding:24px}.card h2{margin-top:0;font-size:1.25rem}.card h3{margin-bottom:.35rem}.wide{grid-column:1/-1}.tag{display:inline-block;border:1px solid var(--line);padding:5px 9px;border-radius:999px;margin:3px;font-size:.82rem;background:var(--soft)}
+    table{width:100%;border-collapse:collapse;font-size:.94rem}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}.pass{color:var(--good);font-weight:700}.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:stretch}.step{border:1px solid var(--line);border-radius:13px;padding:14px;background:var(--soft);font-size:.9rem}.step b{display:block;margin-bottom:5px}.note{border-left:4px solid var(--accent);padding:12px 16px;background:#f2f5ff;border-radius:0 12px 12px 0}.small{font-size:.9rem;color:var(--muted)}code{background:#eef1f7;padding:2px 5px;border-radius:5px}pre{overflow:auto;background:#111827;color:#f8fafc;border-radius:14px;padding:18px}
+    @media(max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)}.flow{grid-template-columns:repeat(2,1fr)}}@media(max-width:640px){.grid,.metrics{grid-template-columns:1fr}.hero{padding:24px}.flow{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section class="hero">
+    <div class="eyebrow">Release evidence dashboard · v0.5.0</div>
+    <h1>Regulated AI MLOps Platform</h1>
+    <p class="lead">The release result comes first: the current synthetic-data build passes its automated release controls. The model score is not treated as the final decision. A separate versioned policy, safety gates, review routing, audit identifiers, monitoring, and deployment controls sit around it.</p>
+    <p><span class="status">Controlled demo release: PASS</span></p>
+    <p class="small">Synthetic engineering demonstration only. It is not a validated financial-advice system.</p>
+  </section>
+
+  <section class="metrics" aria-label="Key metrics">
+    <div class="metric"><strong>0.785</strong><span>Independent test AUC</span></div>
+    <div class="metric"><strong>0.189</strong><span>Brier score</span></div>
+    <div class="metric"><strong>0.822</strong><span>Policy precision</span></div>
+    <div class="metric"><strong>106.1 ms</strong><span>API p95 latency</span></div>
+  </section>
+
+  <section class="grid">
+    <article class="card wide">
+      <h2>Why the release passes</h2>
+      <table>
+        <thead><tr><th>Control</th><th>Status</th><th>Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Model promotion</td><td class="pass">PASS</td><td>AUC, Brier, calibration, policy precision, and segment gates</td></tr>
+          <tr><td>Data quality</td><td class="pass">PASS</td><td>Schema, ranges, missingness, duplicates, and target checks</td></tr>
+          <tr><td>Privacy</td><td class="pass">PASS</td><td>Direct-identifier block list and data-minimisation review</td></tr>
+          <tr><td>Drift</td><td class="pass">OK</td><td>Reference/current feature and prediction comparison</td></tr>
+          <tr><td>Deployment</td><td class="pass">PASS</td><td>Non-root, read-only filesystem, probes, resources, HPA, PDB, NetworkPolicy</td></tr>
+          <tr><td>Reproducibility</td><td class="pass">PASS</td><td>Fixed seed, configuration, artifact checksums, package versions</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <article class="card wide">
+      <h2>One request, from input to audit evidence</h2>
+      <div class="flow">
+        <div class="step"><b>1. Validate</b>Pydantic schema rejects unknown or invalid fields.</div>
+        <div class="step"><b>2. Build features</b>Versioned feature contract creates the model row.</div>
+        <div class="step"><b>3. Score</b>The champion model returns a probability.</div>
+        <div class="step"><b>4. Apply policy</b>A separate policy maps score and gates to an action.</div>
+        <div class="step"><b>5. Route review</b>Borderline or safety-sensitive cases go to a human.</div>
+        <div class="step"><b>6. Record</b>Decision, audit, model, policy, and schema identifiers are emitted.</div>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Independent evaluation</h2>
+      <p>The split design prevents the test set from choosing the model or threshold.</p>
+      <table>
+        <tr><th>Stage</th><th>Use</th></tr>
+        <tr><td>Training</td><td>Fit preprocessing and candidate models</td></tr>
+        <tr><td>Validation</td><td>Select champion and freeze policy threshold</td></tr>
+        <tr><td>Test</td><td>Calculate final result once</td></tr>
+      </table>
+      <p class="note">AUC 95% bootstrap interval: 0.756–0.817. Policy-precision interval: 0.790–0.859.</p>
+    </article>
+
+    <article class="card">
+      <h2>Champion–challenger</h2>
+      <table>
+        <thead><tr><th>Model</th><th>AUC</th><th>Brier</th><th>Policy precision</th></tr></thead>
+        <tbody>
+          <tr><td>Random forest</td><td>0.785</td><td>0.189</td><td>0.822</td></tr>
+          <tr><td>Logistic regression</td><td>0.740</td><td>0.207</td><td>0.784</td></tr>
+        </tbody>
+      </table>
+      <p>The challenger runs in shadow mode. It cannot change the served action until the release gate and review process approve it.</p>
+    </article>
+
+    <article class="card">
+      <h2>Decision controls</h2>
+      <span class="tag">policy v2</span><span class="tag">hard safety gate</span><span class="tag">manual review</span><span class="tag">reason codes</span><span class="tag">decision contract</span>
+      <h3>Manual-review triggers</h3>
+      <p>Near-threshold scores, low confidence, debt pressure, high-value assets, older-customer safeguard, or a hard safety gate.</p>
+      <h3>Traceability</h3>
+      <p>Every response returns <code>decision_id</code>, <code>audit_event_id</code>, <code>model_version</code>, <code>policy_version</code>, and <code>feature_schema_version</code>.</p>
+    </article>
+
+    <article class="card">
+      <h2>Operational checks</h2>
+      <table>
+        <tr><th>Check</th><th>Result</th></tr>
+        <tr><td>Load requests</td><td>200/200 successful</td></tr>
+        <tr><td>Error rate</td><td>0.000</td></tr>
+        <tr><td>p95 latency</td><td>106.1 ms</td></tr>
+        <tr><td>SLO threshold</td><td>250 ms</td></tr>
+        <tr><td>Incident drill</td><td class="pass">PASS</td></tr>
+      </table>
+      <p>Prometheus records request status, latency, action, confidence, review route, and hard safety-gate counts.</p>
+    </article>
+
+    <article class="card wide">
+      <h2>Reproduce the complete release</h2>
+      <pre><code>git clone https://github.com/xm2325/regulated_ml_platform.git
+cd regulated_ml_platform
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+make all</code></pre>
+      <p><code>make all</code> verifies and restores the complete source snapshot when required, generates 5,000 synthetic customers, builds features, trains candidate models, selects the champion and threshold on validation data, evaluates the test set, creates governance and operational reports, builds this page, and runs the tests.</p>
+    </article>
+
+    <article class="card wide">
+      <h2>Read the evidence in this order</h2>
+      <ol>
+        <li><a href="../docs/release_approval_pack.md">Release approval pack</a>: overall decision and control table.</li>
+        <li><a href="../reports/promotion_gate.md">Promotion gate</a>: exact pass/review criteria.</li>
+        <li><a href="../reports/model_evaluation.md">Model evaluation</a>: independent test metrics and confidence intervals.</li>
+        <li><a href="../reports/calibration_report.md">Calibration</a> and <a href="../reports/fairness_report.md">segment behaviour</a>: probability and group diagnostics.</li>
+        <li><a href="../docs/model_contract.md">Model contract</a>: versioned input, output, policy, and prohibited-use rules.</li>
+        <li><a href="data/evidence.json">Machine-readable evidence</a>: metrics used to build this page.</li>
+      </ol>
+    </article>
+  </section>
+</main>
+</body>
+</html>
