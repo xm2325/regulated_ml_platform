@@ -1,196 +1,106 @@
 # Regulated AI MLOps Platform
 
-[![CI](https://github.com/xm2325/regulated_ml_platform/actions/workflows/ci.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/ci.yml)
-[![Docker](https://github.com/xm2325/regulated_ml_platform/actions/workflows/docker-build.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/docker-build.yml)
-[![Pages](https://github.com/xm2325/regulated_ml_platform/actions/workflows/pages.yml/badge.svg)](https://xm2325.github.io/regulated_ml_platform/)
+[![Platform](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml)
+[![CodeQL](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml)
 
-**A production-style ML platform that turns a model score into a controlled, reviewable, and traceable decision.**
+**A production-style ML system that converts a calibrated model probability into a controlled, reviewable, and traceable decision.**
 
-[Open the evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [Read the release pack](docs/release_approval_pack.md) · [Inspect the model contract](docs/model_contract.md)
+## Result first
 
-## The result first
+Version `0.6.0` uses a dated synthetic cohort. Candidate selection, probability calibration, policy-threshold selection, and final evaluation use separate chronological windows.
 
-The current synthetic-data run selects a random-forest champion and evaluates it on an independent test split. Model selection and threshold choice are completed on validation data before the test result is calculated.
-
-| Result | Value |
+| Out-of-time result | Value |
 |---|---:|
-| AUC | 0.785 |
-| Brier score | 0.189 |
-| Policy precision | 0.822 |
-| High-confidence precision | 0.879 |
+| AUC | 0.788 |
+| AUC bootstrap 95% interval | 0.747–0.823 |
+| Brier score | 0.180 |
+| Expected calibration error | 0.075 |
+| Policy precision | 0.875 |
+| Policy recall | 0.710 |
+| High-confidence precision | 0.883 |
+| Policy threshold | 0.70 |
+| API p95 latency | 94.8 ms |
 | Automated promotion status | PASS |
-| API p95 latency | 106.1 ms |
-| Automated tests | 30 passed |
+| Automated tests | 34 passed |
 
-Run `make all` to reproduce the exact values and rebuild the dashboard.
+## Evaluation design
 
-## What the project proves
+```text
+train → model selection → calibration → policy validation → out-of-time test
+3000       500              500             500                 500 rows
+```
 
-The main result is not one accuracy number. The repository shows how an ML system can connect six production concerns:
+| Window | Date range | Purpose |
+|---|---|---|
+| Train | 2025-01-01 to 2025-08-05 | Fit preprocessing and candidate models |
+| Model selection | 2025-08-05 to 2025-09-15 | Select the champion |
+| Calibration | 2025-09-15 to 2025-10-19 | Fit Platt scaling |
+| Policy validation | 2025-10-19 to 2025-11-27 | Select the decision threshold |
+| Out-of-time test | 2025-11-27 to 2025-12-31 | Calculate final metrics |
 
-1. **Independent evaluation** — train/validation/test separation, validation-selected threshold, bootstrap confidence intervals, calibration, and segment checks.
-2. **Decision control** — the model returns a probability; a separate versioned policy maps the score and safety gates to an action.
-3. **Human review** — near-threshold, low-confidence, debt-pressure, older-customer, and high-value cases can be routed to manual review.
-4. **Traceability** — every response carries model, policy, feature-schema, decision, and audit identifiers.
-5. **Operational evidence** — drift, load, SLO, incident, privacy, data-quality, champion–challenger, and reproducibility reports.
-6. **Secure deployment** — non-root container, read-only filesystem, Kubernetes probes, resource controls, HPA, PodDisruptionBudget, NetworkPolicy, Helm, blue–green, canary, KServe, and shadow scoring examples.
+Calibration reduced Brier score from `0.1814` to `0.1795` and expected calibration error from `0.0832` to `0.0748`.
 
-## One request, step by step
+## What version 0.6.0 adds
+
+- direct source files, with no bootstrap archive required;
+- chronological five-window evaluation;
+- a dedicated Platt calibration stage;
+- stronger group diagnostics with insufficient-evidence flags;
+- one artifact-driven GitHub workflow;
+- a Docker smoke test followed by a kind/Helm deployment test;
+- a CycloneDX SBOM, `pip-audit`, CodeQL, and Dependabot.
+
+## Decision path
 
 ```text
 validated request
-      │
-      ▼
-feature construction ── feature_schema_version
-      │
-      ▼
-champion model score ── model_version
-      │
-      ▼
-versioned policy + hard safety gate ── policy_version
-      │
-      ├── auto_serve
-      └── manual_review
-      │
-      ▼
-decision_id + audit_event_id + Prometheus metrics + structured log
+→ feature construction
+→ calibrated model probability
+→ versioned policy and hard safety gate
+→ auto_serve or manual_review
+→ decision_id, audit_event_id, metrics, and redacted log
 ```
 
-The model does not directly issue the final action. `src/serving/policy.py` owns the deterministic action policy, while `src/serving/review_workflow.py` owns review routing.
+The model does not directly issue the final action. `src/serving/policy.py` maps the probability and safety conditions to an action. `src/serving/review_workflow.py` independently assigns the review route.
 
-## Current platform layers
-
-| Layer | Main implementation | Evidence |
-|---|---|---|
-| Data contract | Pydantic request schema, feature validation, data-quality gate | `src/serving/schemas.py`, `reports/data_quality_report.json` |
-| Model lifecycle | MLflow-compatible tracking, validation selection, test evaluation | `src/models/train.py`, `reports/model_evaluation.md` |
-| Decision policy | Separate policy version, threshold, hard safety gate | `src/serving/policy.py`, `config/policy.yaml` |
-| Serving | FastAPI, OpenAPI, health/readiness, request IDs | `src/serving/app.py`, `docs/openapi.json` |
-| Review and audit | Manual-review rules, redacted structured audit event | `src/serving/review_workflow.py`, `src/core/audit.py` |
-| Monitoring | Prometheus, drift, data quality, latency, decision counts | `monitoring/`, `reports/` |
-| Release control | Promotion gate, release pack, artifact checksums | `src/governance/`, `docs/release_approval_pack.md` |
-| Deployment | Docker, Compose, Kubernetes, Helm, KServe | `docker/`, `k8s/`, `helm/`, `kserve/` |
-| Presentation | Self-contained evidence dashboard and GitHub Pages workflow | `site/index.html`, `.github/workflows/pages.yml` |
-
-## Reproduce the full platform
+## Reproduce
 
 ```bash
 git clone https://github.com/xm2325/regulated_ml_platform.git
 cd regulated_ml_platform
-
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-
-make all
+pip install -r requirements-dev.txt
+make evidence
+make lint
+make security
 ```
 
-`make all` performs this sequence:
+The optional MLflow integration can be installed with `pip install -r requirements-mlflow.txt`.
+
+## GitHub pipeline
 
 ```text
-generate synthetic data
-→ build features
-→ train and select models on validation data
-→ freeze the threshold
-→ evaluate once on the test split
-→ generate governance and monitoring evidence
-→ validate Kubernetes controls
-→ build the release pack and artifact manifest
-→ build the evidence dashboard
-→ run the test suite
+evidence job
+  ├── model-artifacts ──→ container smoke test ──→ kind/Helm test ──→ GHCR
+  ├── release-evidence
+  └── generated-site ──────────────────────────────────────────────→ Pages
 ```
 
-## Run the API
+Training and evidence generation run once per commit. Docker and Pages reuse the resulting artifacts.
 
-```bash
-make serve
-```
+## Evidence
 
-Useful endpoints:
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Service and model health |
-| `GET /ready` | Kubernetes readiness |
-| `GET /version` | Service, model, policy, and schema versions |
-| `GET /decision-contract` | Machine-readable decision semantics |
-| `POST /predict` | Champion score, policy action, review route, and audit IDs |
-| `POST /explain` | Model reason codes plus policy reasons |
-| `POST /review-route` | Manual-review routing result |
-| `POST /shadow-predict` | Champion–challenger comparison without changing the served action |
-| `GET /metrics` | Prometheus metrics |
-
-Example:
-
-```bash
-curl -X POST http://localhost:8000/predict \
-  -H 'Content-Type: application/json' \
-  -H 'X-Request-ID: demo-request-0001' \
-  -d @examples/review_request.json
-```
-
-The response separates model evidence from policy evidence:
-
-```json
-{
-  "decision_id": "decision_...",
-  "support_probability": 0.73,
-  "recommended_action": "investment_support",
-  "reason_codes": ["high_cash_ratio", "sufficient_accessible_assets"],
-  "policy_reasons": ["high_cash_ratio", "minimum_accessible_assets_met"],
-  "model_version": "0.5.0",
-  "policy_version": "targeted-support-policy-v2",
-  "feature_schema_version": "financial_customer_features_v3",
-  "review_route": "auto_serve",
-  "audit_event_id": "audit_..."
-}
-```
-
-## Review the evidence in the right order
-
-Start with the decision, then inspect the supporting layers:
-
-1. `docs/release_approval_pack.md` — overall release decision and control status.
-2. `reports/promotion_gate.md` — exact pass/review checks.
-3. `reports/model_evaluation.md` — independent test metrics and uncertainty.
-4. `reports/calibration_report.md` and `reports/fairness_report.md` — probability and segment behaviour.
-5. `reports/drift_report.html`, `reports/load_test_report.md`, and `reports/incident_drill_report.md` — operational evidence.
-6. `docs/model_contract.md` and `docs/reproducibility_manifest.md` — interface and artifact traceability.
-7. `site/index.html` — a single-page summary generated from the committed reports.
-
-## CI/CD and release checks
-
-The GitHub workflows perform:
-
-- unit, API, contract, governance, and deployment tests;
-- lint and high-severity static security checks;
-- synthetic artifact generation;
-- Kubernetes security validation;
-- Docker image build;
-- evidence artifact upload;
-- GitHub Pages publication.
-
-## Repository map
-
-```text
-src/
-  core/          configuration, structured logging, redacted audit events
-  data/          synthetic dataset generation
-  features/      feature contract and transformations
-  models/        validation-based model selection and test evaluation
-  serving/       API, policy, review routing, batch and shadow scoring
-  monitoring/    data quality and drift
-  governance/    promotion, privacy, contract, explainability, manifests
-  operations/    load test, incident drill, deployment validation, site build
-config/          versioned policy and promotion thresholds
-docs/            model, data, architecture, runbook, SLO, rollback, release pack
-reports/         committed machine-readable and human-readable evidence
-site/            self-contained evidence dashboard
-k8s/             production-style Kubernetes examples
-helm/            parameterised deployment chart
-.github/         CI, container, CodeQL, and Pages workflows
-```
+1. `docs/release_approval_pack.md`
+2. `reports/model_evaluation.md`
+3. `reports/calibration_report.md`
+4. `reports/promotion_gate.md`
+5. `reports/fairness_report.md`
+6. `reports/drift_report.html`
+7. `reports/deployment_validation.md`
+8. `reports/sbom.cdx.json`
+9. `site/index.html`
 
 ## Boundary
 
-The dataset, outcome, and consumer action are synthetic. This repository demonstrates ML engineering, release control, monitoring, and governance design. It is not a validated financial-advice system and must not be used for real customer decisions.
+The dataset, target, time shift, and consumer actions are synthetic. This repository demonstrates ML engineering, chronological evaluation, probability calibration, decision control, monitoring, deployment testing, and release evidence. It is not a validated financial-advice system.

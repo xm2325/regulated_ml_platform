@@ -1,0 +1,24 @@
+image:
+  repository: ghcr.io/xm2325/regulated_ml_platform
+  tag: "0.6.0"
+  pullPolicy: IfNotPresent
+replicaCount: 2
+serviceAccount:
+  create: true
+  name: regulated-ai-mlops
+service:
+  type: ClusterIP
+  port: 80
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+networkPolicy:
+  enabled: true
+resources:
+  requests: {cpu: "250m", memory: "384Mi"}
+  limits: {cpu: "1", memory: "1Gi"}
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 65

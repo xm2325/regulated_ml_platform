@@ -1,0 +1,174 @@
+name: Platform build, test, container, and evidence
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: regulated-ai-mlops
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements-runtime.lock
+            requirements.txt
+            requirements-dev.txt
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Generate dated synthetic data and features
+        run: make data features
+      - name: Train, calibrate, and evaluate out of time
+        run: make train
+      - name: Generate monitoring and governance reports
+        run: make reports contract
+      - name: Run batch scoring and operational controls
+        run: make batch load deployment incident
+      - name: Generate interface, SBOM, release pack, and site
+        run: make openapi sbom manifest approval site
+      - name: Run automated tests
+        run: make test
+      - name: Run quality and supply-chain gates
+        run: |
+          make lint
+          make security
+          make audit
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts
+          path: |
+            models/model.joblib
+            models/metadata.json
+            models/model_contract.json
+            models/candidates/
+          retention-days: 14
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: |
+            reports/
+            docs/model_card.md
+            docs/model_contract.md
+            docs/release_approval_pack.md
+            docs/reproducibility_manifest.md
+            docs/slo_error_budget.md
+            docs/rollback_policy.md
+          retention-days: 14
+      - name: Upload generated site
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-site
+          path: site/
+          retention-days: 14
+
+  container-and-kind:
+    needs: evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: models
+      - name: Inspect downloaded model artifacts
+        run: find models -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+      - name: Build image once
+        run: docker build --progress=plain -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+      - name: Live container smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name regulated-ai-api -p 8000:8000 "${IMAGE_NAME}:${IMAGE_TAG}"
+          trap 'docker logs regulated-ai-api || true; docker stop regulated-ai-api || true' EXIT
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/ready; then
+              curl --fail --silent http://127.0.0.1:8000/version
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Install kind
+        run: |
+          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+      - name: Helm deployment test in kind
+        id: kind_smoke
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          bash scripts/kind_smoke_test.sh > kind-smoke-test.log 2>&1
+          status=$?
+          cat kind-smoke-test.log
+          exit $status
+      - name: Upload kind diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-smoke-test-log
+          path: kind-smoke-test.log
+          retention-days: 7
+      - name: Stop after a kind failure
+        if: steps.kind_smoke.outcome == 'failure'
+        run: exit 1
+      - name: Publish the tested image to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in "${IMAGE_TAG}" "0.6.0" latest; do
+            docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${tag}"
+            docker push "ghcr.io/xm2325/regulated_ml_platform:${tag}"
+          done
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: evidence
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-site
+          path: site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy evidence dashboard
+        id: deployment
+        uses: actions/deploy-pages@v4
