@@ -41,8 +41,14 @@ jobs:
         run: make train
       - name: Generate monitoring and governance reports
         run: make reports contract
-      - name: Exercise batch and operational controls
-        run: make batch load deployment incident
+      - name: Run batch scoring
+        run: make batch
+      - name: Run API load test
+        run: make load
+      - name: Validate deployment controls
+        run: make deployment
+      - name: Run incident drill
+        run: make incident
       - name: Generate interface, SBOM, release pack, and site
         run: make openapi sbom manifest approval site
       - name: Run automated tests
@@ -52,7 +58,8 @@ jobs:
           make lint
           make security
           make audit
-      - uses: actions/upload-artifact@v4
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: model-artifacts
           path: |
@@ -61,7 +68,8 @@ jobs:
             models/model_contract.json
             models/candidates/
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
         with:
           name: release-evidence
           path: |
@@ -70,8 +78,11 @@ jobs:
             docs/model_contract.md
             docs/release_approval_pack.md
             docs/reproducibility_manifest.md
+            docs/slo_error_budget.md
+            docs/rollback_policy.md
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - name: Upload generated site
+        uses: actions/upload-artifact@v4
         with:
           name: generated-site
           path: site/
@@ -102,11 +113,11 @@ jobs:
           for i in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8000/ready; then
               curl --fail --silent http://127.0.0.1:8000/version
-              break
+              exit 0
             fi
             sleep 2
           done
-          curl --fail --silent http://127.0.0.1:8000/ready
+          exit 1
       - name: Install kind
         run: |
           curl -Lo kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64
@@ -133,21 +144,25 @@ jobs:
           for i in {1..30}; do
             if curl --fail --silent http://127.0.0.1:18000/ready; then
               curl --fail --silent http://127.0.0.1:18000/version
-              curl --fail --silent -X POST http://127.0.0.1:18000/predict -H 'Content-Type: application/json' --data @examples/review_request.json
+              curl --fail --silent -X POST http://127.0.0.1:18000/predict \
+                -H 'Content-Type: application/json' \
+                --data @examples/review_request.json
               exit 0
             fi
             sleep 2
           done
           exit 1
-      - name: Publish tested image to GHCR
+      - name: Publish the tested image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          for tag in "${IMAGE_TAG}" "0.6.0" latest; do
-            docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${tag}"
-            docker push "ghcr.io/xm2325/regulated_ml_platform:${tag}"
-          done
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:${IMAGE_TAG}"
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:0.6.0"
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "ghcr.io/xm2325/regulated_ml_platform:latest"
+          docker push "ghcr.io/xm2325/regulated_ml_platform:${IMAGE_TAG}"
+          docker push "ghcr.io/xm2325/regulated_ml_platform:0.6.0"
+          docker push "ghcr.io/xm2325/regulated_ml_platform:latest"
 
   deploy-pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -169,5 +184,6 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
-      - id: deployment
+      - name: Deploy evidence dashboard
+        id: deployment
         uses: actions/deploy-pages@v4
