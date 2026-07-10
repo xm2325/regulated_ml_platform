@@ -99,32 +99,14 @@ jobs:
       - name: Inspect downloaded model artifacts
         run: find models -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
       - name: Build image once
-        id: docker_build
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          docker build --progress=plain -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" . > docker-build.log 2>&1
-          status=$?
-          cat docker-build.log
-          exit $status
-      - name: Upload Docker build diagnostic log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-build-diagnostic-log
-          path: docker-build.log
-          retention-days: 7
-      - name: Stop after a Docker build failure
-        if: steps.docker_build.outcome == 'failure'
-        run: exit 1
+        run: docker build --progress=plain -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
       - name: Live container smoke test
         shell: bash
         run: |
           set -euo pipefail
           docker run -d --rm --name regulated-ai-api -p 8000:8000 "${IMAGE_NAME}:${IMAGE_TAG}"
           trap 'docker logs regulated-ai-api || true; docker stop regulated-ai-api || true' EXIT
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8000/ready; then
               curl --fail --silent http://127.0.0.1:8000/version
               exit 0
@@ -138,34 +120,25 @@ jobs:
           chmod +x kind
           sudo mv kind /usr/local/bin/kind
       - name: Helm deployment test in kind
+        id: kind_smoke
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          kind create cluster --name regulated-ai --wait 120s
-          kind load docker-image "${IMAGE_NAME}:${IMAGE_TAG}" --name regulated-ai
-          helm upgrade --install regulated-ai helm/regulated-ai \
-            --set image.repository="${IMAGE_NAME}" \
-            --set image.tag="${IMAGE_TAG}" \
-            --set image.pullPolicy=Never \
-            --set replicaCount=1 \
-            --set autoscaling.enabled=false \
-            --set podDisruptionBudget.enabled=false \
-            --set networkPolicy.enabled=false
-          kubectl rollout status deployment/regulated-ai-api --timeout=180s
-          kubectl port-forward service/regulated-ai-api 18000:80 >/tmp/port-forward.log 2>&1 &
-          PORT_FORWARD_PID=$!
-          trap 'kill ${PORT_FORWARD_PID} || true; kubectl get all; kubectl logs deployment/regulated-ai-api || true; kind delete cluster --name regulated-ai' EXIT
-          for i in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:18000/ready; then
-              curl --fail --silent http://127.0.0.1:18000/version
-              curl --fail --silent -X POST http://127.0.0.1:18000/predict \
-                -H 'Content-Type: application/json' \
-                --data @examples/review_request.json
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
+          set +e
+          bash scripts/kind_smoke_test.sh > kind-smoke-test.log 2>&1
+          status=$?
+          cat kind-smoke-test.log
+          exit $status
+      - name: Upload kind diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-smoke-test-log
+          path: kind-smoke-test.log
+          retention-days: 7
+      - name: Stop after a kind failure
+        if: steps.kind_smoke.outcome == 'failure'
+        run: exit 1
       - name: Publish the tested image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
