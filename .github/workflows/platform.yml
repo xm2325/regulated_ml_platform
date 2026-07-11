@@ -15,7 +15,8 @@ concurrency:
 
 env:
   IMAGE_NAME: regulated-ai-mlops
-  IMAGE_TAG: ${{ github.sha }}
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  IMAGE_TAG: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   evidence:
@@ -23,6 +24,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -92,6 +96,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: model-artifacts
@@ -166,6 +173,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: model-artifacts

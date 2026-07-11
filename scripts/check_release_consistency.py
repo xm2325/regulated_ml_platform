@@ -107,6 +107,21 @@ def check_source_consistency(root: Path = ROOT) -> str:
     if re.search(r'"(?:service|platform)-[0-9]+\.[0-9]+\.[0-9]+"', release_workflow):
         raise ConsistencyError("release workflow must derive service/platform tags from VERSION")
 
+    platform_workflow = _read(root / ".github/workflows/platform.yml")
+    required_platform_fragments = (
+        "SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
+        "IMAGE_TAG: ${{ github.event.pull_request.head.sha || github.sha }}",
+        "ref: ${{ env.SOURCE_SHA }}",
+    )
+    missing_platform = [
+        fragment for fragment in required_platform_fragments if fragment not in platform_workflow
+    ]
+    if missing_platform:
+        raise ConsistencyError(
+            "Platform workflow must check out and tag the real source SHA: "
+            + ", ".join(missing_platform)
+        )
+
     preprod_overlay = _read(root / "gitops/environments/preprod/kustomization.yaml")
     prod_overlay = _read(root / "gitops/environments/prod/kustomization.yaml")
     for label, overlay in (("preprod", preprod_overlay), ("production", prod_overlay)):
