@@ -112,6 +112,9 @@ def check_source_consistency(root: Path = ROOT) -> str:
         "SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
         "IMAGE_TAG: ${{ github.event.pull_request.head.sha || github.sha }}",
         "ref: ${{ env.SOURCE_SHA }}",
+        "release-evidence-consistency:",
+        '--source-sha "${SOURCE_SHA}"',
+        "needs: release-evidence-consistency",
     )
     missing_platform = [
         fragment for fragment in required_platform_fragments if fragment not in platform_workflow

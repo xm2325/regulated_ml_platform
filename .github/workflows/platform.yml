@@ -87,8 +87,42 @@ jobs:
           path: site/
           retention-days: 14
 
-  container-and-kind:
+  release-evidence-consistency:
     needs: evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: release-artifacts/models
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-evidence
+          path: release-artifacts/evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-site
+          path: release-artifacts/site
+      - name: Prove one source produced the releasable evidence set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_release_consistency.py \
+            --source-sha "${SOURCE_SHA}" \
+            --model-dir release-artifacts/models \
+            --evidence-dir release-artifacts/evidence \
+            --site-dir release-artifacts/site
+
+  container-and-kind:
+    needs: release-evidence-consistency
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -165,7 +199,7 @@ jobs:
           if-no-files-found: error
 
   registry-integration:
-    needs: evidence
+    needs: release-evidence-consistency
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
