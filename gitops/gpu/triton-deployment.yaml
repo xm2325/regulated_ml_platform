@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-credit-risk
+  labels:
+    app.kubernetes.io/name: triton-credit-risk
+    app.kubernetes.io/component: gpu-inference
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: triton-credit-risk
+      app.kubernetes.io/component: gpu-inference
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: triton-credit-risk
+        app.kubernetes.io/component: gpu-inference
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8002"
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-a100
+        cloud.google.com/gke-nodepool: a100-inference
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: triton-credit-risk
+      containers:
+        - name: triton
+          image: ghcr.io/xm2325/regulated_ml_platform-triton:0.8.0
+          imagePullPolicy: IfNotPresent
+          command: ["tritonserver"]
+          args:
+            - --model-repository=/models
+            - --model-control-mode=explicit
+            - --load-model=credit-risk
+            - --strict-readiness=true
+            - --exit-on-error=true
+            - --allow-http=true
+            - --allow-grpc=true
+            - --allow-metrics=true
+            - --metrics-port=8002
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: grpc
+              containerPort: 8001
+            - name: metrics
+              containerPort: 8002
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /v2/health/live
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 2
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 20"]
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: dshm
+              mountPath: /dev/shm
+            - name: cache
+              mountPath: /.cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        - name: cache
+          emptyDir:
+            sizeLimit: 4Gi

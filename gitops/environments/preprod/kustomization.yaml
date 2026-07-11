@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: regulated-ml-preprod
+resources:
+  - ../../base
+  - namespace.yaml
+  - resourcequota.yaml
+images:
+  - name: ghcr.io/xm2325/regulated_ml_platform
+    newName: ghcr.io/xm2325/regulated_ml_platform
+    newTag: "0.8.0"
+patches:
+  - path: rollout-patch.yaml
+    target:
+      group: argoproj.io
+      version: v1alpha1
+      kind: Rollout
+      name: regulated-ai-mlops

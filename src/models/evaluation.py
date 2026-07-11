@@ -170,7 +170,7 @@ def write_markdown_table(rows: list[dict[str, Any]], columns: list[str]) -> list
 def write_model_evaluation(metrics: dict[str, Any], output_path: Path) -> None:
     best = metrics["best_model"]
     best_metrics = metrics["models"][best]
-    lines = ["# Model evaluation report", "", f"**Release conclusion:** the calibrated `{best}` is evaluated on a later, untouched time window.", "", f"Model version: `{metrics['model_version']}`  ", f"Frozen policy threshold: `{metrics['policy_threshold']:.2f}`", "", "## Out-of-time test result", "", "| Metric | Value |", "|---|---:|"]
+    lines = ["# Model evaluation report", "", f"**Release conclusion:** the calibrated `{best}` is evaluated on a later, untouched time window.", "", f"Model version: `{metrics['model_version']}`", "", f"Frozen policy threshold: `{metrics['policy_threshold']:.2f}`", "", "## Out-of-time test result", "", "| Metric | Value |", "|---|---:|"]
     lines.extend(f"| {key} | {value:.4f} |" for key, value in best_metrics.items() if isinstance(value, float))
     lines.extend(["", "## Temporal split", "", "| Split | Rows | Start | End | Positive rate |", "|---|---:|---|---|---:|"])
     for name, summary in metrics["split_ranges"].items():
@@ -188,7 +188,7 @@ def write_model_evaluation(metrics: dict[str, Any], output_path: Path) -> None:
 
 
 def write_fairness_report(fairness: dict[str, Any], output_path: Path) -> None:
-    lines = ["# Segment behaviour report", "", f"Frozen policy threshold: `{fairness['threshold']:.2f}`  ", f"Minimum group size for comparative conclusions: `{fairness['minimum_group_size']}`", "", "Groups below the evidence threshold are reported but excluded from gap-based release checks.", ""]
+    lines = ["# Segment behaviour report", "", f"Frozen policy threshold: `{fairness['threshold']:.2f}`", "", f"Minimum group size for comparative conclusions: `{fairness['minimum_group_size']}`", "", "Groups below the evidence threshold are reported but excluded from gap-based release checks.", ""]
     columns = ["group", "n", "evidence_status", "observed_positive_rate", "predicted_support_rate", "precision_at_policy_threshold", "recall_at_policy_threshold", "false_positive_rate", "expected_calibration_error", "auc", "brier"]
     for group_col, rows in fairness["groups"].items():
         lines.extend([f"## {group_col}", ""])
@@ -202,7 +202,7 @@ def write_fairness_report(fairness: dict[str, Any], output_path: Path) -> None:
 
 def write_calibration_report(metrics: dict[str, Any], output_path: Path) -> None:
     comparison = metrics["calibration_comparison"]
-    lines = ["# Calibration report", "", "Platt scaling is fitted on a dedicated calibration window after the base model is selected.", "", f"Calibration intercept: `{comparison['intercept']:.4f}`  ", f"Calibration slope: `{comparison['slope']:.4f}`", "", "| Metric | Raw champion | Calibrated champion |", "|---|---:|---:|"]
+    lines = ["# Calibration report", "", "Platt scaling is fitted on a dedicated calibration window after the base model is selected.", "", f"Calibration intercept: `{comparison['intercept']:.4f}`", "", f"Calibration slope: `{comparison['slope']:.4f}`", "", "| Metric | Raw champion | Calibrated champion |", "|---|---:|---:|"]
     for key in ["brier", "expected_calibration_error", "auc"]:
         lines.append(f"| {key} | {comparison['raw'][key]:.4f} | {comparison['calibrated'][key]:.4f} |")
     lines.extend(["", "## Calibrated out-of-time bins", ""])

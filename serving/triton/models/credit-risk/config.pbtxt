@@ -1,0 +1,43 @@
+name: "credit-risk"
+platform: "onnxruntime_onnx"
+max_batch_size: 32
+
+version_policy {
+  specific {
+    versions: [1]
+  }
+}
+
+input [
+  {
+    name: "features"
+    data_type: TYPE_FP32
+    dims: [12]
+  }
+]
+
+output [
+  {
+    name: "support_probability"
+    data_type: TYPE_FP32
+    dims: [1]
+  }
+]
+
+dynamic_batching {
+  preferred_batch_size: [4, 8, 16, 32]
+  max_queue_delay_microseconds: 5000
+  preserve_ordering: true
+}
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU
+    gpus: [0]
+  }
+]
+
+response_cache {
+  enable: true
+}

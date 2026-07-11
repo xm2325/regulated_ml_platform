@@ -13,7 +13,7 @@ def test_health_endpoint():
 
 
 def test_version_endpoint():
-    assert client.get("/version").json()["service_version"] == "0.6.0"
+    assert client.get("/version").json()["service_version"] == "0.8.0"
 
 
 def test_predict_endpoint():

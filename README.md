@@ -1,117 +1,133 @@
 # Regulated AI MLOps Platform
 
 [![Platform](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml)
+[![Progressive delivery](https://github.com/xm2325/regulated_ml_platform/actions/workflows/gitops.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/gitops.yml)
 [![CodeQL](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml)
-[![Pages](https://img.shields.io/badge/evidence-dashboard-blue)](https://xm2325.github.io/regulated_ml_platform/)
 
-**A production-style ML system that converts a calibrated model probability into a controlled, reviewable, and traceable decision.**
+**A production-style reference platform for turning an ML model into a controlled, observable, reviewable and reversible service.**
 
-[Open the evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [Read the release pack](docs/release_approval_pack.md) · [Inspect the decision contract](docs/model_contract.md)
+Platform/service release: `0.8.0`
 
 ## Result first
 
-Version `0.6.0` now includes a runnable model registry in addition to the validated model evidence. For the dated synthetic cohort, candidate selection, probability calibration, policy-threshold selection, and final evaluation use separate chronological windows. The final result comes from the latest untouched window.
+The platform separates model evaluation, decision policy, human review, registry state, deployment state and release evidence. Version `0.8.0` adds the controls that sit between a tested container and a governed multi-environment release:
 
-| Out-of-time result | Value |
-|---|---:|
-| AUC | 0.788 |
-| AUC bootstrap 95% interval | 0.747–0.823 |
-| Brier score | 0.180 |
-| Expected calibration error | 0.075 |
-| Policy precision | 0.875 |
-| Policy recall | 0.710 |
-| High-confidence precision | 0.883 |
-| Policy threshold | 0.70 |
-| API p95 latency | 94.8 ms |
-| Automated promotion status | PASS |
-| Automated tests | 40 passed |
-
-The release decision is not based on AUC alone. Data quality, probability calibration, segment behaviour, privacy, drift, load, deployment configuration, incident response, reproducibility, and rollback evidence are checked before the release pack is marked `PASS`.
-
-## What version 0.6.0 includes
-
-| Change | Why it matters |
+| Capability | Implemented evidence |
 |---|---|
-| Chronological five-window evaluation | Stops later observations from entering model fitting or policy selection |
-| Dedicated Platt calibration window | Separates probability calibration from model selection and threshold choice |
-| Out-of-time test | Measures behaviour on the latest synthetic cohort |
-| Stronger group diagnostics | Reports precision, recall, false-positive rate, calibration error, and evidence sufficiency |
-| One artifact-driven GitHub workflow | Generates data, models, reports, container input, and website once per commit |
-| Docker and kind/Helm integration test | Checks the same image first as a container and then inside Kubernetes |
-| CycloneDX SBOM and dependency audit | Records runtime packages and checks known dependency issues in CI |
-| Dependabot for Python and Actions | Creates scheduled dependency update pull requests |
-| Direct source tree | No bootstrap archive or self-modifying workflow is required |
-| MLflow model registry | Tracks runs and model versions with runnable champion, challenger, and rollback aliases |
-| PostgreSQL backend | Stores experiments, runs, registry versions, tags, and aliases outside the MLflow process |
-| MinIO artifact store | Stores versioned models and release evidence through the MLflow artifact proxy |
-| Controlled registry transition | Blocks promotion unless the promotion gate is PASS and records rollback provenance |
+| GitOps environments | Argo CD definitions for dev, preprod and prod plus Kustomize overlays and ResourceQuotas |
+| Progressive delivery | Argo Rollouts stages at 5%, 25%, 50% and 100% with Prometheus analysis and automatic abort |
+| Fail-closed promotion | Deterministic Python canary gate covering traffic, reliability, drift, fairness and stable-baseline regression |
+| GPU serving contract | Inactive NVIDIA Triton ONNX/A100 contract with dynamic batching, probes and hardened networking; CI renders it but no environment deploys it |
+| Operational visibility | Prometheus discovery and alert rules plus a provisioned Grafana dashboard for rollout, model and GPU signals |
+| Release integrity | One `VERSION`, cross-surface consistency checks, source-run validation and same-SHA artifact verification |
+
+These controls are executable configuration and tested contracts. They are not a claim that this demonstration has operated real bank traffic, a live GKE/A100 estate, Harness or Dynatrace.
+
+## Verified benchmark baseline
+
+The latest publicly inspectable model benchmark before the `0.8.0` infrastructure upgrade is the successful [Platform run 29098202613](https://github.com/xm2325/regulated_ml_platform/actions/runs/29098202613) at commit [`a672e081e6b8331c546eb4e5a742c1a6cd356903`](https://github.com/xm2325/regulated_ml_platform/commit/a672e081e6b8331c546eb4e5a742c1a6cd356903). It used a dated synthetic cohort and model version `0.6.0`.
+
+| Out-of-time synthetic result | Value |
+|---|---:|
+| AUC | 0.7884 |
+| AUC bootstrap 95% interval | 0.7470-0.8226 |
+| Brier score | 0.1795 |
+| Expected calibration error | 0.0748 |
+| Policy precision | 0.8755 |
+| Policy recall | 0.7098 |
+| API load-test p95 | 50.8 ms |
+| Promotion and release gates | PASS |
+
+The `0.8.0` release must create a new same-SHA evidence set before publication. The release workflow rejects a model version, source commit, policy, schema, gate or site that does not match the validated source run.
+
+## Evidence truth model
+
+The repository deliberately distinguishes three things:
+
+1. Source contracts are the Python, policy, workflow and deployment files reviewed in Git.
+2. A committed evidence snapshot under `docs/`, `reports/` or `site/` is useful for orientation but may describe an earlier validated release.
+3. A CI-generated release artifact from one successful Platform run is authoritative for publication. It contains the matching model artifacts, metrics, approval evidence and generated site for one commit.
+
+`scripts/check_release_consistency.py` validates both the source declarations and the downloaded artifact set. Account-level GHCR or Pages failures remain separate from required engineering validation.
 
 ## Evaluation design
 
 ```text
 2025-01-01                                                     2025-12-31
-│                                                                     │
-├──────── train ────────┤ selection ┤ calibration ┤ policy ┤ OOT test ┤
-│       3,000 rows      │ 500 rows  │  500 rows  │500 rows│ 500 rows │
-│                       │           │            │        │          │
-fit preprocessing       choose      fit Platt    freeze   report only
-and candidate models    champion    scaling      threshold
+|                                                                     |
++--------- train ---------+ selection + calibration + policy + OOT test
+|       3,000 rows        | 500 rows |  500 rows  |500 rows| 500 rows
+|                         |          |            |        |
+fit preprocessing         choose     fit Platt    freeze   report only
+and candidate models      champion   scaling      threshold
 ```
 
-| Window | Rows | Date range | Purpose |
-|---|---:|---|---|
-| Train | 3,000 | 2025-01-01 to 2025-08-05 | Fit preprocessing and candidate models |
-| Model selection | 500 | 2025-08-05 to 2025-09-15 | Select the champion using AUC and Brier score |
-| Calibration | 500 | 2025-09-15 to 2025-10-19 | Fit Platt scaling on the selected base model |
-| Policy validation | 500 | 2025-10-19 to 2025-11-27 | Select the decision threshold |
-| Out-of-time test | 500 | 2025-11-27 to 2025-12-31 | Calculate the final reported metrics |
+The final window is not used for candidate selection, probability calibration or policy-threshold selection. The dataset, target, drift and consumer actions are synthetic.
 
-Calibration reduced the out-of-time Brier score from `0.1814` to `0.1795` and expected calibration error from `0.0832` to `0.0748`. AUC remained `0.7884`, as expected for a monotonic probability transformation.
-
-## One request, step by step
+## Controlled decision path
 
 ```text
 validated request
-      │
-      ▼
-feature construction ── feature_schema_version
-      │
-      ▼
-calibrated champion probability ── model_version
-      │
-      ▼
-versioned policy + hard safety gate ── policy_version
-      │
-      ├── auto_serve
-      └── manual_review
-      │
-      ▼
-decision_id + audit_event_id + Prometheus metrics + redacted log
+      |
+      v
+feature construction ---------------- feature_schema_version
+      |
+      v
+calibrated probability --------------- model_version
+      |
+      v
+versioned policy + safety gates ------ policy_version
+      |
+      +---- auto_serve
+      +---- manual_review
+      |
+      v
+decision_id + audit_event_id + metrics + redacted log
 ```
 
-The model does not directly issue the final action. `src/serving/policy.py` maps the probability and explicit safety conditions to an action. `src/serving/review_workflow.py` independently decides whether the case can be served automatically or needs human review.
+The model does not directly issue the final action. `src/serving/policy.py` maps probability and safety conditions to an action; `src/serving/review_workflow.py` independently decides whether human review is required.
 
-## Platform map
+## Build, registry and release flow
 
-| Layer | Implementation | Evidence |
-|---|---|---|
-| Dated data contract | Synthetic cohort, date validation, duplicate-ID check | `src/data/`, `src/features/`, `reports/data_quality_report.json` |
-| Model lifecycle | Candidate fitting, temporal selection, calibration, out-of-time evaluation | `src/models/train.py`, `src/models/calibration.py` |
-| Model registry | MLflow runs, model versions, aliases, promotion gate, rollback and atomic sync | `src/registry/`, `docker-compose.registry.yml` |
-| Decision control | Separate threshold, policy version, hard safety gate | `src/serving/policy.py`, `config/policy.yaml` |
-| Serving | FastAPI, OpenAPI, readiness, request IDs | `src/serving/app.py`, `docs/openapi.json` |
-| Review and audit | Manual-review rules and redacted audit events | `src/serving/review_workflow.py`, `src/core/audit.py` |
-| Monitoring | Early-vs-late drift, validity, latency, prediction and review counts | `src/monitoring/`, `reports/` |
-| Release control | Promotion gate, model card, SBOM, artifact checksums | `src/governance/`, `reports/sbom.cdx.json` |
-| Deployment | Secure container, Kubernetes, Helm, HPA, PDB, NetworkPolicy | `docker/`, `k8s/`, `helm/` |
-| CI/CD | One evidence job, tested image, kind/Helm test, Pages artifact reuse | `.github/workflows/platform.yml` |
+```text
+Platform workflow
+  +-- dated data, model selection, calibration and OOT evidence
+  +-- tests, lint, security, dependency audit and SBOM
+  +-- exact Docker image tested locally and in kind/Helm
+  +-- PostgreSQL + MinIO + MLflow lifecycle integration
+  +-- model-artifacts + release-evidence + generated-site
+                 |
+                 v
+Release workflow validates run, repository, event, branch, SHA and artifacts
+  +-- publish the exact tested image to GHCR
+  +-- publish the generated evidence site to GitHub Pages
+                 |
+                 v
+GitOps promotion changes an immutable image digest by reviewed pull request
+  +-- Argo CD reconciles desired state
+  +-- Argo Rollouts advances 5% -> 25% -> 50% -> 100%
+  +-- missing or failed analysis aborts to the stable ReplicaSet
+```
 
-## Reproduce the evidence
+The normal GitHub-hosted runner validates the GitOps manifests and the Triton deployment contract without pretending to have an A100. Real CUDA/TensorRT parity, latency, throughput and cost evidence requires a controlled GPU runner or cloud environment.
+
+## Repository map
+
+| Layer | Key paths |
+|---|---|
+| Data and temporal evaluation | `src/data/`, `src/features/`, `src/models/` |
+| Registry lifecycle | `src/registry/`, `docker-compose.registry.yml` |
+| Decision service | `src/serving/`, `config/policy.yaml` |
+| Governance and evidence | `src/governance/`, `config/promotion_gate.yaml` |
+| Canary decision | `src/operations/canary_gate.py`, `config/canary_gate.yaml` |
+| GitOps and rollouts | `gitops/argocd/`, `gitops/base/`, `gitops/environments/` |
+| GPU/Triton contract | `gitops/gpu/`, `serving/triton/` |
+| Observability | `monitoring/` |
+| Cloud validation | `.github/workflows/platform.yml`, `.github/workflows/gitops.yml`, `.github/workflows/release.yml` |
+
+## Reproduce locally
 
 ```bash
-git clone https://github.com/xm2325/regulated_ml_platform.git
-cd regulated_ml_platform
-
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -119,102 +135,23 @@ pip install -r requirements-dev.txt
 make evidence
 make lint
 make security
+make release-consistency
 ```
 
-`make evidence` performs:
-
-```text
-generate dated synthetic data
-→ build point-in-time features
-→ fit candidate models
-→ select champion on a later window
-→ fit Platt calibration on a separate window
-→ select policy threshold on another window
-→ evaluate on the latest untouched window
-→ generate calibration, segment, drift, privacy and release evidence
-→ run batch and API load tests
-→ validate deployment controls
-→ generate CycloneDX SBOM and artifact manifest
-→ build the evidence dashboard
-→ run the full test suite
-```
-
-`make audit` checks the API runtime lock and `make audit-registry` checks the MLflow, PostgreSQL-driver, and S3-client lock. Install the registry client with `pip install -r requirements-mlflow.txt`.
-
-## Run the model registry
+Validate the new delivery controls:
 
 ```bash
-make registry-up
-make registry-register
-make registry-promote
-make registry-status
-make registry-verify
+pytest -q tests/test_progressive_delivery.py tests/test_gitops_image_update.py
+python -m src.operations.canary_gate \
+  --metrics examples/canary_metrics_pass.json \
+  --config config/canary_gate.yaml \
+  --output reports/canary_gate.json
+kubectl kustomize gitops/environments/preprod
+kubectl kustomize gitops/gpu
 ```
 
-The local stack uses MLflow `3.14.0`, PostgreSQL for tracking and registry metadata, and MinIO for model artifacts. A newly registered release receives the `challenger` alias. Promotion is blocked unless `reports/promotion_gate.json` is `PASS`; the previous champion is moved to `rollback` before the challenger becomes champion.
-
-```text
-register → challenger
-PASS gate → previous champion becomes rollback → challenger becomes champion
-incident rollback → rollback becomes champion → failed champion becomes challenger
-```
-
-`make registry-smoke` runs two registrations, two controlled promotions, one rollback, one alias-status check, one registry model download, and one real probability prediction. See `docs/model_registry.md` for the command contract and production boundary.
-
-## Run the API
-
-```bash
-make serve
-```
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Service and model health |
-| `GET /ready` | Kubernetes readiness |
-| `GET /version` | Service, model, policy, and feature-schema versions |
-| `GET /decision-contract` | Machine-readable decision semantics |
-| `POST /predict` | Calibrated probability, policy action, review route, and audit IDs |
-| `POST /explain` | Model reason codes and policy reasons |
-| `POST /review-route` | Human-review routing result |
-| `POST /shadow-predict` | Champion–challenger comparison without changing the served action |
-| `GET /metrics` | Prometheus metrics |
-
-```bash
-curl -X POST http://localhost:8000/predict \
-  -H 'Content-Type: application/json' \
-  -H 'X-Request-ID: demo-request-0001' \
-  -d @examples/review_request.json
-```
-
-## GitHub pipeline
-
-The main workflow creates one evidence set and passes it to later jobs:
-
-```text
-evidence job
-  ├── model-artifacts
-  ├── release-evidence
-  └── generated-site
-          │
-          ├── container smoke test → kind/Helm deployment test → GHCR
-          ├── PostgreSQL + MinIO + MLflow registry lifecycle test
-          └── GitHub Pages deployment
-```
-
-The container job builds one image, tests that image locally, loads the same image into kind, installs the Helm chart, calls `/ready`, `/version`, and `/predict`, and only then publishes tags on a `main` push.
-
-## Read the evidence in this order
-
-1. `docs/release_approval_pack.md` — overall decision and control status.
-2. `reports/model_evaluation.md` — chronological windows, out-of-time metrics, and uncertainty.
-3. `reports/calibration_report.md` — raw versus calibrated probability quality.
-4. `reports/promotion_gate.md` — exact automated checks.
-5. `reports/fairness_report.md` — group metrics and insufficient-evidence flags.
-6. `reports/drift_report.html` — early reference window versus latest monitoring window.
-7. `reports/deployment_validation.md` — container and Kubernetes configuration checks.
-8. `reports/sbom.cdx.json` — direct runtime dependency inventory.
-9. `site/index.html` — generated one-page evidence summary.
+Read [`docs/progressive_delivery.md`](docs/progressive_delivery.md), [`docs/gpu_serving.md`](docs/gpu_serving.md), [`docs/model_registry.md`](docs/model_registry.md), and [`docs/architecture.md`](docs/architecture.md) for the control boundaries and operational rationale.
 
 ## Boundary
 
-The dataset, target, drift, and consumer actions are synthetic. This repository demonstrates ML engineering, chronological evaluation, probability calibration, decision control, monitoring, deployment testing, and release evidence. It is not a validated financial-advice system and must not be used for real customer decisions.
+This repository is an engineering demonstration using synthetic data. It is not financial advice, a validated banking model, evidence of production operation, or a substitute for security, data-protection, model-risk and accountable business approval.

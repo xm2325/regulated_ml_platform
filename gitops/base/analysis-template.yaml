@@ -1,0 +1,111 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: regulated-ai-canary-slo
+  labels:
+    app.kubernetes.io/name: regulated-ai-mlops
+spec:
+  args:
+    - name: canary-service
+    - name: namespace
+    - name: prometheus-address
+      value: http://prometheus.monitoring.svc.cluster.local:9090
+  metrics:
+    - name: request-volume
+      interval: 1m
+      count: 5
+      failureLimit: 1
+      successCondition: len(result) == 1 && result[0] >= 100
+      failureCondition: len(result) == 0 || result[0] < 100
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            sum(increase(regulated_ai_http_requests_total{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}"
+            }[5m]))
+    - name: availability
+      interval: 1m
+      count: 5
+      failureLimit: 2
+      successCondition: len(result) == 1 && result[0] >= 0.995
+      failureCondition: len(result) == 0 || result[0] < 0.995
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            sum(rate(regulated_ai_http_requests_total{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}",
+              status!~"5.."
+            }[5m]))
+            /
+            clamp_min(sum(rate(regulated_ai_http_requests_total{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}"
+            }[5m])), 0.001)
+    - name: error-rate
+      interval: 1m
+      count: 5
+      failureLimit: 2
+      successCondition: len(result) == 1 && result[0] <= 0.01
+      failureCondition: len(result) == 0 || result[0] > 0.01
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            sum(rate(regulated_ai_http_requests_total{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}",
+              status=~"5.."
+            }[5m]))
+            /
+            clamp_min(sum(rate(regulated_ai_http_requests_total{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}"
+            }[5m])), 0.001)
+    - name: p95-latency
+      interval: 1m
+      count: 5
+      failureLimit: 2
+      successCondition: len(result) == 1 && result[0] <= 0.25
+      failureCondition: len(result) == 0 || result[0] > 0.25
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(regulated_ai_http_request_duration_seconds_bucket{
+                namespace="{{args.namespace}}",
+                service="{{args.canary-service}}"
+              }[5m]))
+            )
+    - name: population-stability-index
+      interval: 2m
+      count: 3
+      failureLimit: 1
+      successCondition: len(result) == 1 && result[0] <= 0.20
+      failureCondition: len(result) == 0 || result[0] > 0.20
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            max(model_drift_psi{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}"
+            })
+    - name: fairness-gap
+      interval: 2m
+      count: 3
+      failureLimit: 1
+      successCondition: len(result) == 1 && result[0] <= 0.10
+      failureCondition: len(result) == 0 || result[0] > 0.10
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            max(model_fairness_gap{
+              namespace="{{args.namespace}}",
+              service="{{args.canary-service}}"
+            })

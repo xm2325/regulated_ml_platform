@@ -4,7 +4,7 @@ metadata:
   name: regulated-ai-mlops
   labels:
     app: regulated-ai-mlops
-    app.kubernetes.io/version: "0.5.0"
+    app.kubernetes.io/version: "0.8.0"
 spec:
   replicas: 2
   revisionHistoryLimit: 5
@@ -20,7 +20,7 @@ spec:
     metadata:
       labels:
         app: regulated-ai-mlops
-        app.kubernetes.io/version: "0.5.0"
+        app.kubernetes.io/version: "0.8.0"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/xm2325/regulated_ml_platform:0.5.0
+          image: ghcr.io/xm2325/regulated_ml_platform:0.8.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -47,7 +47,7 @@ spec:
             - name: APP_ENV
               value: production
             - name: SERVICE_VERSION
-              value: "0.5.0"
+              value: "0.8.0"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

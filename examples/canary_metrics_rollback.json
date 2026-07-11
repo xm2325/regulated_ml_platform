@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "release_id": "credit-risk-2026-07-11.2",
+  "observed_at": "2026-07-11T10:30:00Z",
+  "window_seconds": 600,
+  "sample_count": 11800,
+  "canary": {
+    "availability": 0.972,
+    "error_rate": 0.028,
+    "p95_latency_ms": 410.0,
+    "drift_psi": 0.27,
+    "fairness_gap": 0.14
+  },
+  "baseline": {
+    "error_rate": 0.0032,
+    "p95_latency_ms": 158.0
+  }
+}

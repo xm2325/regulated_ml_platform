@@ -8,8 +8,9 @@ RUN python -m pip wheel --wheel-dir /wheels -r requirements-runtime.lock
 FROM python:3.11-slim
 LABEL org.opencontainers.image.source="https://github.com/xm2325/regulated_ml_platform" \
       org.opencontainers.image.description="Regulated AI MLOps platform API" \
+      org.opencontainers.image.version="0.8.0" \
       org.opencontainers.image.licenses="MIT"
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_ENV=container SERVICE_VERSION=0.6.0
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_ENV=container SERVICE_VERSION=0.8.0
 RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --home-dir /app app
 WORKDIR /app
 COPY --from=builder /wheels /wheels

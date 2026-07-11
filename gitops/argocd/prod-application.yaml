@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regulated-ai-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: regulated-ai-mlops
+    environment: prod
+spec:
+  project: regulated-ai
+  source:
+    repoURL: https://github.com/xm2325/regulated_ml_platform.git
+    targetRevision: main
+    path: gitops/environments/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: regulated-ml-prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true

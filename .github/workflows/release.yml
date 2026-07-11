@@ -35,6 +35,7 @@ jobs:
     outputs:
       run_id: ${{ steps.context.outputs.run_id }}
       source_sha: ${{ steps.context.outputs.source_sha }}
+      release_version: ${{ steps.version.outputs.release_version }}
     steps:
       - id: context
         shell: bash
@@ -69,15 +70,71 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > source-run.json
           jq -e --arg sha "${SOURCE_SHA}" '
             .conclusion == "success" and
+            .name == "Platform build, test, container, and evidence" and
+            .path == ".github/workflows/platform.yml" and
             .event == "push" and
             .head_branch == "main" and
             .head_sha == $sha and
             .head_repository.full_name == env.GITHUB_REPOSITORY
           ' source-run.json >/dev/null
           echo "Validated successful main-branch Platform run ${SOURCE_RUN_ID}."
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.context.outputs.source_sha }}
+          persist-credentials: false
+      - name: Validate release declarations
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_release_consistency.py
+          release_version="$(tr -d '[:space:]' < VERSION)"
+          [[ "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "release_version=${release_version}" >> "${GITHUB_OUTPUT}"
+
+  validate-release-evidence:
+    needs: release-context
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-context.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: release-artifacts/models
+          run-id: ${{ needs.release-context.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-evidence
+          path: release-artifacts/evidence
+          run-id: ${{ needs.release-context.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-site
+          path: release-artifacts/site
+          run-id: ${{ needs.release-context.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reject stale or mixed release evidence
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.release-context.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python scripts/check_release_consistency.py \
+            --source-sha "${SOURCE_SHA}" \
+            --model-dir release-artifacts/models \
+            --evidence-dir release-artifacts/evidence \
+            --site-dir release-artifacts/site
 
   publish-ghcr:
-    needs: release-context
+    needs: [release-context, validate-release-evidence]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -108,17 +165,18 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ needs.release-context.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.release-context.outputs.release_version }}
         run: |
           set -euo pipefail
           source_image="regulated-ai-mlops:${SOURCE_SHA}"
-          for tag in "${SOURCE_SHA}" "service-0.6.0" "platform-0.7.1" latest; do
+          for tag in "${SOURCE_SHA}" "service-${RELEASE_VERSION}" "platform-${RELEASE_VERSION}" latest; do
             target="ghcr.io/xm2325/regulated_ml_platform:${tag}"
             docker tag "${source_image}" "${target}"
             docker push "${target}"
           done
 
   deploy-pages:
-    needs: release-context
+    needs: [release-context, validate-release-evidence]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -137,9 +195,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify site artifact
         shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.release-context.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.release-context.outputs.release_version }}
         run: |
           set -euo pipefail
           test -s site/index.html
+          jq -n \
+            --arg source_sha "${SOURCE_SHA}" \
+            --arg release_version "${RELEASE_VERSION}" \
+            '{source_sha: $source_sha, release_version: $release_version, provenance: "validated Platform workflow artifact"}' \
+            > site/release-provenance.json
           touch site/.nojekyll
           find site -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
       - uses: actions/configure-pages@v5
