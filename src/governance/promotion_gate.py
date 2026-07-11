@@ -44,9 +44,9 @@ def evaluate_gate(metrics: dict[str, Any], thresholds: dict[str, Any] | None = N
 
 
 def write_markdown(gate: dict[str, Any], output: Path) -> None:
-    lines = ["# Model promotion gate", "", f"## Release conclusion: **{gate['status']}**", "", f"Recommendation: `{gate['release_recommendation']}`  ", f"Model version: `{gate['model_version']}`  ", f"Selected model: `{gate['best_model']}`  ", f"Frozen policy threshold: `{gate['policy_threshold']:.2f}`", "", "## Evidence checks", "", "| Check | Result |", "|---|---|"]
+    lines = ["# Model promotion gate", "", f"## Release conclusion: **{gate['status']}**", "", f"Recommendation: `{gate['release_recommendation']}`", "", f"Model version: `{gate['model_version']}`", "", f"Selected model: `{gate['best_model']}`", "", f"Frozen policy threshold: `{gate['policy_threshold']:.2f}`", "", "## Evidence checks", "", "| Check | Result |", "|---|---|"]
     lines.extend(f"| {name} | {'PASS' if passed else 'REVIEW'} |" for name, passed in gate["checks"].items())
-    lines.extend(["", "## Evaluation design", "", f"Model selection: `{gate['evaluation_design']['model_selection']}`  ", f"Calibration: `{gate['evaluation_design']['calibration']}`  ", f"Threshold selection: `{gate['evaluation_design']['threshold_selection']}`  ", f"Final evaluation: `{gate['evaluation_design']['final_evaluation']}`"])
+    lines.extend(["", "## Evaluation design", "", f"Model selection: `{gate['evaluation_design']['model_selection']}`", "", f"Calibration: `{gate['evaluation_design']['calibration']}`", "", f"Threshold selection: `{gate['evaluation_design']['threshold_selection']}`", "", f"Final evaluation: `{gate['evaluation_design']['final_evaluation']}`"])
     if gate["failed_checks"]:
         lines.extend(["", "Checks requiring review: " + ", ".join(gate["failed_checks"])])
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")

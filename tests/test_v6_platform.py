@@ -26,7 +26,7 @@ def test_decision_contract_endpoint():
 def test_request_id_header_is_returned():
     response = client.post("/predict", json=REQUEST, headers={"X-Request-ID": "trace-12345678"})
     assert response.headers["X-Request-ID"] == "trace-12345678"
-    assert response.headers["X-Service-Version"] == "0.6.0"
+    assert response.headers["X-Service-Version"] == "0.8.0"
 
 
 def test_unknown_request_field_is_rejected():
@@ -54,7 +54,7 @@ def test_model_contract_uses_versioned_layers(tmp_path: Path):
     import json
     metadata = json.loads((tmp_path / "models/metadata.json").read_text())
     contract = build_contract(metadata)
-    assert contract["model_version"] == "0.6.0"
+    assert contract["model_version"] == "0.8.0"
     assert contract["policy_version"] == "targeted-support-policy-v3"
     assert "financial advice" in contract["prohibited_uses"]
 

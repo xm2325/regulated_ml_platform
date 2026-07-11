@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: regulated-ml-prod
+resources:
+  - ../../base
+  - namespace.yaml
+  - resourcequota.yaml
+images:
+  - name: ghcr.io/xm2325/regulated_ml_platform
+    newName: ghcr.io/xm2325/regulated_ml_platform
+    # Fail-closed sentinel: the production Application cannot pull this value.
+    # A reviewed promotion must replace it with the tested GHCR digest.
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+patches:
+  - path: rollout-patch.yaml
+    target:
+      group: argoproj.io
+      version: v1alpha1
+      kind: Rollout
+      name: regulated-ai-mlops

@@ -27,7 +27,7 @@ def build_pack(reports_dir: Path) -> dict[str, Any]:
 
 
 def write_markdown(pack: dict[str, Any], output: Path) -> None:
-    lines = ["# Release approval pack", "", f"## Release decision: **{pack['overall_status']}**", "", f"Recommendation: `{pack['release_decision']}`  ", f"Model: `{pack['best_model']} / {pack['model_version']}`  ", f"Policy: `{pack['policy_version']}`  ", f"Feature schema: `{pack['feature_schema_version']}`", "", "## Control status", "", "| Control | Status |", "|---|---|"]
+    lines = ["# Release approval pack", "", f"## Release decision: **{pack['overall_status']}**", "", f"Recommendation: `{pack['release_decision']}`", "", f"Model: `{pack['best_model']} / {pack['model_version']}`", "", f"Policy: `{pack['policy_version']}`", "", f"Feature schema: `{pack['feature_schema_version']}`", "", "## Control status", "", "| Control | Status |", "|---|---|"]
     lines.extend(f"| {name} | {status} |" for name, status in pack["control_statuses"].items())
     lines.extend(["", "## Key evidence", "", "| Metric | Value |", "|---|---:|"])
     lines.extend(f"| {name} | {value:.4f} |" if isinstance(value, float) else f"| {name} | {value} |" for name, value in pack["key_metrics"].items())

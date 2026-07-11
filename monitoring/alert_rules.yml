@@ -1,0 +1,117 @@
+groups:
+  - name: regulated-ai-progressive-delivery
+    interval: 30s
+    rules:
+      - alert: CanaryHighErrorRate
+        expr: |
+          sum by (namespace, service) (rate(regulated_ai_http_requests_total{service=~".*-canary",status=~"5.."}[5m]))
+          /
+          clamp_min(sum by (namespace, service) (rate(regulated_ai_http_requests_total{service=~".*-canary"}[5m])), 0.001)
+          > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          team: ml-platform
+        annotations:
+          summary: Canary error-rate budget exceeded
+          description: "{{ $labels.namespace }}/{{ $labels.service }} has exceeded 1% errors for two minutes."
+          runbook: docs/progressive_delivery.md#automatic-rollback
+
+      - alert: CanaryP95LatencyBudgetBreach
+        expr: |
+          histogram_quantile(0.95,
+            sum by (namespace, service, le) (
+              rate(regulated_ai_http_request_duration_seconds_bucket{service=~".*-canary"}[5m])
+            )
+          ) > 0.25
+        for: 3m
+        labels:
+          severity: critical
+          team: ml-platform
+        annotations:
+          summary: Canary p95 latency exceeds 250 ms
+          runbook: docs/progressive_delivery.md#automatic-rollback
+
+      - alert: CanaryAnalysisFailed
+        expr: analysis_run_metric_phase{phase="Failed"} > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: ml-platform
+        annotations:
+          summary: Argo Rollouts analysis metric failed
+          description: "AnalysisRun {{ $labels.name }} failed metric {{ $labels.metric }}."
+          runbook: docs/progressive_delivery.md#automatic-rollback
+
+      - alert: RolloutDegraded
+        expr: rollout_info{phase=~"Degraded|Error"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          team: ml-platform
+        annotations:
+          summary: Progressive rollout is degraded
+          runbook: docs/progressive_delivery.md#automatic-rollback
+
+      - alert: ModelDriftPSIBreach
+        expr: max by (namespace, model_version) (model_drift_psi) > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          team: model-risk
+        annotations:
+          summary: Model PSI drift gate exceeded
+          description: "PSI for {{ $labels.model_version }} has remained above 0.20."
+          runbook: docs/progressive_delivery.md#decision-contract
+
+      - alert: ModelFairnessGapBreach
+        expr: max by (namespace, model_version) (model_fairness_gap) > 0.10
+        for: 10m
+        labels:
+          severity: critical
+          team: model-risk
+        annotations:
+          summary: Model fairness gap gate exceeded
+          runbook: docs/progressive_delivery.md#decision-contract
+
+  - name: regulated-ai-gpu-serving
+    interval: 30s
+    rules:
+      - alert: TritonInferenceFailureRate
+        expr: |
+          sum by (namespace, model) (rate(nv_inference_request_failure[5m]))
+          /
+          clamp_min(sum by (namespace, model) (
+            rate(nv_inference_request_success[5m]) + rate(nv_inference_request_failure[5m])
+          ), 0.001) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          team: ml-platform
+        annotations:
+          summary: Triton inference failure rate exceeds 1%
+          runbook: docs/gpu_serving.md#operational-response
+
+      - alert: TritonQueueLatencyHigh
+        expr: |
+          sum by (namespace, model) (rate(nv_inference_queue_duration_us[5m]))
+          /
+          clamp_min(sum by (namespace, model) (rate(nv_inference_request_success[5m])), 0.001)
+          > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: ml-platform
+        annotations:
+          summary: Mean Triton queue time exceeds 10 ms
+          runbook: docs/gpu_serving.md#operational-response
+
+      - alert: GpuSaturation
+        expr: avg by (namespace, pod, gpu) (DCGM_FI_DEV_GPU_UTIL) > 90
+        for: 10m
+        labels:
+          severity: warning
+          team: ml-platform
+        annotations:
+          summary: A100 GPU has remained above 90% utilisation
+          runbook: docs/gpu_serving.md#operational-response

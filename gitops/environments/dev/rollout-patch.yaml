@@ -1,0 +1,9 @@
+- op: replace
+  path: /spec/replicas
+  value: 1
+- op: add
+  path: /spec/template/metadata/labels/environment
+  value: dev
+- op: replace
+  path: /spec/template/spec/containers/0/env/0/value
+  value: development

@@ -1,0 +1,15 @@
+schema_version: "1.0"
+thresholds:
+  minimum_requests: 1000
+  availability_min: 0.995
+  error_rate_max: 0.01
+  p95_latency_ms_max: 250.0
+  drift_psi_max: 0.20
+  fairness_gap_max: 0.10
+baseline_regression:
+  error_rate_increase_max: 0.005
+  p95_latency_increase_pct_max: 20.0
+decision:
+  pass: PASS
+  fail: ROLLBACK
+  fail_closed: true

@@ -1,4 +1,7 @@
-.PHONY: data features train reports contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry sbom serve docker release-consistency evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+
+PLATFORM_VERSION := $(strip $(shell cat VERSION))
+MODEL_VERSION ?= $(PLATFORM_VERSION)
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -38,9 +41,9 @@ site:
 test:
 	pytest -q
 lint:
-	ruff check src tests
+	ruff check src tests scripts
 security:
-	bandit -q -r src -lll
+	bandit -q -r src scripts -lll
 audit:
 	python -m pip_audit -r requirements-runtime.lock --strict
 audit-registry:
@@ -48,13 +51,15 @@ audit-registry:
 serve:
 	uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker:
-	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:0.6.0 .
+	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:$(PLATFORM_VERSION) .
+release-consistency:
+	python scripts/check_release_consistency.py
 registry-up:
 	docker compose -f docker-compose.registry.yml up -d --build postgres minio minio-init mlflow
 registry-down:
 	docker compose -f docker-compose.registry.yml down -v --remove-orphans
 registry-register:
-	docker compose -f docker-compose.registry.yml --profile registry run --rm registry-cli register --model-version 0.6.0
+	docker compose -f docker-compose.registry.yml --profile registry run --rm registry-cli register --model-version $(MODEL_VERSION)
 registry-promote:
 	docker compose -f docker-compose.registry.yml --profile registry run --rm registry-cli promote --gate reports/promotion_gate.json
 registry-rollback:
@@ -65,6 +70,6 @@ registry-verify:
 	docker compose -f docker-compose.registry.yml --profile registry run --rm registry-cli verify --alias champion --request examples/review_request.json
 registry-smoke:
 	bash scripts/registry_stack_smoke.sh
-evidence: data features train reports contract batch load deployment incident openapi sbom manifest approval site test
+evidence: release-consistency data features train reports contract batch load deployment incident openapi sbom manifest approval site test
 ci: evidence lint security audit audit-registry
 all: evidence

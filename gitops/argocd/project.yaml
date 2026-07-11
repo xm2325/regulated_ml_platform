@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: regulated-ai
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: regulated-ai-mlops
+spec:
+  description: Constrained GitOps project for regulated AI workloads
+  sourceRepos:
+    - https://github.com/xm2325/regulated_ml_platform.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: regulated-ml-*
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true

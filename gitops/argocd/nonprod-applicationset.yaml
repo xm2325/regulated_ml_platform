@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: regulated-ai-nonprod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: regulated-ai-mlops
+spec:
+  generators:
+    - list:
+        elements:
+          - environment: dev
+            namespace: regulated-ml-dev
+            path: gitops/environments/dev
+          - environment: preprod
+            namespace: regulated-ml-preprod
+            path: gitops/environments/preprod
+  template:
+    metadata:
+      name: regulated-ai-{{environment}}
+      labels:
+        environment: "{{environment}}"
+    spec:
+      project: regulated-ai
+      source:
+        repoURL: https://github.com/xm2325/regulated_ml_platform.git
+        targetRevision: main
+        path: "{{path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - CreateNamespace=false
+          - ApplyOutOfSyncOnly=true
+          - PruneLast=true
+          - RespectIgnoreDifferences=true

@@ -1,0 +1,144 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: regulated-ai-mlops
+  labels:
+    app.kubernetes.io/name: regulated-ai-mlops
+    app.kubernetes.io/component: inference-api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  minReadySeconds: 10
+  progressDeadlineSeconds: 900
+  progressDeadlineAbort: true
+  rollbackWindow:
+    revisions: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: regulated-ai-mlops
+      app.kubernetes.io/component: inference-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: regulated-ai-mlops
+        app.kubernetes.io/component: inference-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: regulated-ai-mlops
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/xm2325/regulated_ml_platform:0.8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: APP_ENV
+              value: base
+            - name: SERVICE_VERSION
+              value: "0.8.0"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  strategy:
+    canary:
+      stableService: regulated-ai-mlops-stable
+      canaryService: regulated-ai-mlops-canary
+      maxSurge: 1
+      maxUnavailable: 0
+      abortScaleDownDelaySeconds: 30
+      scaleDownDelaySeconds: 60
+      dynamicStableScale: true
+      steps:
+        - setWeight: 5
+        - pause:
+            duration: 2m
+        - analysis:
+            templates:
+              - templateName: regulated-ai-canary-slo
+            args:
+              - name: canary-service
+                value: regulated-ai-mlops-canary
+              - name: namespace
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+        - setWeight: 25
+        - pause:
+            duration: 5m
+        - analysis:
+            templates:
+              - templateName: regulated-ai-canary-slo
+            args:
+              - name: canary-service
+                value: regulated-ai-mlops-canary
+              - name: namespace
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+        - setWeight: 50
+        - pause:
+            duration: 10m
+        - analysis:
+            templates:
+              - templateName: regulated-ai-canary-slo
+            args:
+              - name: canary-service
+                value: regulated-ai-mlops-canary
+              - name: namespace
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+        - setWeight: 100
