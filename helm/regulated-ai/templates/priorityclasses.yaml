@@ -1,0 +1,17 @@
+{{- if .Values.priorityClasses.create }}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Values.priorityClasses.inference.name }}
+value: {{ .Values.priorityClasses.inference.value }}
+globalDefault: false
+description: "Higher-priority online inference workload for the regulated AI service."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Values.priorityClasses.training.name }}
+value: {{ .Values.priorityClasses.training.value }}
+globalDefault: false
+description: "Lower-priority batch model-training workload; it must not displace online inference."
+{{- end }}
