@@ -1,4 +1,4 @@
-.PHONY: data features train reports continuous alerts contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -21,6 +21,18 @@ alerts:
 	python -m src.operations.validate_alerting --rules observability/prometheus/regulated-ai-alerts.yaml --repo-root . --output reports/alerting_validation.json
 contract:
 	python -m src.governance.model_contract --metadata models/metadata.json --output-json models/model_contract.json --output-md docs/model_contract.md
+triton-export:
+	python -m src.serving.triton_export --model models/model.joblib --metadata models/metadata.json --sample data/processed/features.csv --output-root models/triton
+triton-validate:
+	python -m src.operations.validate_triton_repository --root models/triton --output reports/triton_repository_validation.json
+triton-parity:
+	python -m src.serving.validate_triton_export --model models/model.joblib --sample data/processed/features.csv --triton-root models/triton --output reports/triton_onnx_parity.json
+triton-benchmark:
+	python -m src.operations.benchmark_onnx_cpu --model models/model.joblib --sample data/processed/features.csv --triton-root models/triton --output reports/onnx_cpu_benchmark.json
+accelerator:
+	python -m src.operations.accelerator_policy --contract models/triton/contract.json --policy config/accelerator_policy.yaml --output reports/accelerator_decision.json
+triton: triton-export triton-validate triton-parity triton-benchmark accelerator
+	python -m pip freeze | grep -E '^(onnx|onnxruntime|skl2onnx)==' > reports/onnx_toolchain_versions.txt
 batch:
 	python -m src.serving.batch_score --input data/raw/customers.csv --output reports/batch_predictions.csv
 load:
@@ -47,6 +59,8 @@ security:
 	bandit -q -r src -lll
 audit:
 	python -m pip_audit -r requirements-runtime.lock --strict
+audit-onnx:
+	python -m pip_audit -r requirements-onnx.txt --strict
 audit-registry:
 	python -m pip_audit -r requirements-mlflow.lock --strict
 audit-registry-client:
@@ -54,7 +68,7 @@ audit-registry-client:
 serve:
 	uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker:
-	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.0.0 .
+	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.1.0 .
 registry-up:
 	docker compose -f docker-compose.registry.yml up -d --build postgres minio minio-init mlflow
 registry-down:
@@ -71,6 +85,6 @@ registry-verify:
 	docker compose -f docker-compose.registry.yml --profile registry run --rm registry-cli verify --alias champion --request examples/review_request.json
 registry-smoke:
 	bash scripts/registry_stack_smoke.sh
-evidence: data features train reports continuous alerts contract batch load deployment incident openapi sbom manifest approval site test
-ci: evidence lint security audit audit-registry audit-registry-client
+evidence: data features train triton reports continuous alerts contract batch load deployment incident openapi sbom manifest approval site test
+ci: evidence lint security audit audit-onnx audit-registry audit-registry-client
 all: evidence
