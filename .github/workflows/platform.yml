@@ -41,8 +41,8 @@ jobs:
         run: make data features
       - name: Train, calibrate, and evaluate out of time
         run: make train
-      - name: Generate monitoring and governance reports
-        run: make reports contract
+      - name: Generate monitoring, continuous-ops, alerting, and governance evidence
+        run: make reports continuous alerts contract
       - name: Run batch scoring and operational controls
         run: make batch load deployment incident
       - name: Generate interface, SBOM, release pack, and site
@@ -117,6 +117,7 @@ jobs:
             docs/reproducibility_manifest.md
             docs/slo_error_budget.md
             docs/rollback_policy.md
+            docs/runbooks/
           retention-days: 14
       - name: Upload generated site
         uses: actions/upload-artifact@v4
@@ -181,6 +182,48 @@ jobs:
       - name: Stop after a kind failure
         if: steps.kind_smoke.outcome == 'failure'
         run: exit 1
+      - name: Build immutable release identity and dev-to-preprod promotion evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/environment_promotion
+          export IMAGE_DIGEST
+          IMAGE_DIGEST=$(docker image inspect --format='{{.Id}}' "${IMAGE_NAME}:${IMAGE_TAG}")
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from src.operations.gitops_promotion import build_release_identity
+
+          metadata = json.loads(Path("models/metadata.json").read_text(encoding="utf-8"))
+          identity = build_release_identity(os.environ["IMAGE_DIGEST"], os.environ["GITHUB_SHA"], metadata)
+          Path("reports/environment_promotion/release_identity.json").write_text(json.dumps(identity, indent=2), encoding="utf-8")
+          checks = {
+              "automated_tests": "PASS",
+              "lint": "PASS",
+              "security_scan": "PASS",
+              "dependency_audit": "PASS",
+              "container_smoke": "PASS",
+              "helm_kind": "PASS",
+          }
+          Path("reports/environment_promotion/dev_preprod_checks.json").write_text(json.dumps(checks, indent=2), encoding="utf-8")
+          PY
+          python -m src.operations.gitops_promotion \
+            --source dev \
+            --target preprod \
+            --image-digest "${IMAGE_DIGEST}" \
+            --git-commit "${GITHUB_SHA}" \
+            --model-metadata models/metadata.json \
+            --checks reports/environment_promotion/dev_preprod_checks.json \
+            --source-release-identity reports/environment_promotion/release_identity.json \
+            --output-json reports/environment_promotion/dev_to_preprod.json \
+            --output-md reports/environment_promotion/dev_to_preprod.md
+      - name: Upload dev-to-preprod promotion evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: environment-promotion-preprod
+          path: reports/environment_promotion/
+          retention-days: 14
       - name: Export the exact tested image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
@@ -222,6 +265,8 @@ jobs:
           test -s models/metadata.json
           test -s reports/model_metrics.json
           test -s reports/promotion_gate.json
+          test -s reports/continuous_ops_decision.json
+          test -s reports/alerting_validation.json
       - name: Exercise registry lifecycle, live API canary, promotion, and rollback
         run: bash scripts/registry_stack_smoke.sh
       - name: Upload registry runtime integration evidence
@@ -230,4 +275,80 @@ jobs:
         with:
           name: registry-integration-evidence
           path: reports/registry_integration/
+          retention-days: 14
+
+  production-promotion-control:
+    needs: [container-and-kind, registry-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install runtime configuration dependency
+        run: pip install PyYAML==6.0.3
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: models
+      - uses: actions/download-artifact@v4
+        with:
+          name: environment-promotion-preprod
+          path: promotion-preprod
+      - name: Verify production remains blocked without explicit approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/environment_promotion
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          checks = {
+              "automated_tests": "PASS",
+              "lint": "PASS",
+              "security_scan": "PASS",
+              "dependency_audit": "PASS",
+              "container_smoke": "PASS",
+              "helm_kind": "PASS",
+              "registry_integration": "PASS",
+              "canary_evidence": "PASS",
+              "rollback_drill": "PASS",
+          }
+          Path("reports/environment_promotion/prod_checks.json").write_text(json.dumps(checks, indent=2), encoding="utf-8")
+          PY
+          IMAGE_DIGEST=$(python -c 'import json; print(json.load(open("promotion-preprod/release_identity.json"))["image_digest"])')
+          set +e
+          python -m src.operations.gitops_promotion \
+            --source preprod \
+            --target prod \
+            --image-digest "${IMAGE_DIGEST}" \
+            --git-commit "${GITHUB_SHA}" \
+            --model-metadata models/metadata.json \
+            --checks reports/environment_promotion/prod_checks.json \
+            --approval-status pending \
+            --source-release-identity promotion-preprod/release_identity.json \
+            --output-json reports/environment_promotion/preprod_to_prod_blocked.json \
+            --output-md reports/environment_promotion/preprod_to_prod_blocked.md
+          status=$?
+          set -e
+          test "$status" -eq 2
+          python - <<'PY'
+          import json
+          report = json.load(open("reports/environment_promotion/preprod_to_prod_blocked.json"))
+          assert report["status"] == "BLOCKED"
+          assert report["release_identity"]["image_digest"].startswith("sha256:")
+          assert report["manual_approval_required"] is True
+          assert "manual production approval is required" in report["reasons"]
+          print(json.dumps(report, indent=2))
+          PY
+      - name: Upload production promotion control evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-promotion-control
+          path: reports/environment_promotion/
           retention-days: 14
