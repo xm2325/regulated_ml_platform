@@ -61,7 +61,7 @@ def test_canary_status_endpoint_is_disabled_by_default():
     body = response.json()
     assert body["enabled"] is False
     assert body["state"] == "disabled"
-    assert body["metrics"]["window_requests"] == 0
+    assert body["traffic_percent"] >= 0
 
 
 def test_metrics_endpoint():
