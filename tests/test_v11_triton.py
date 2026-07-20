@@ -1,9 +1,6 @@
 from src.operations.accelerator_policy import evaluate_accelerator_policy
 from src.operations.gpu_autoscaling import decide_gpu_scaling
-from src.serving.triton_export import (
-    _base_config,
-    _ensemble_config,
-)
+from src.serving import triton_export
 
 
 ACCELERATOR_POLICY = {
@@ -100,7 +97,7 @@ def test_gpu_autoscaling_does_not_scale_in_when_batching_is_weak():
 
 
 def test_triton_base_config_has_bounded_dynamic_batching():
-    config = _base_config(19, "probabilities", 128)
+    config = triton_export._base_config(19, "probabilities", 128)
     assert "max_batch_size: 128" in config
     assert "preferred_batch_size: [ 8, 32, 64 ]" in config
     assert "max_queue_delay_microseconds: 500" in config
@@ -108,7 +105,7 @@ def test_triton_base_config_has_bounded_dynamic_batching():
 
 
 def test_triton_ensemble_preserves_calibration_stage():
-    config = _ensemble_config(19, "probabilities", 128)
+    config = triton_export._ensemble_config(19, "probabilities", 128)
     assert 'model_name: "support_base"' in config
     assert 'model_name: "support_calibrator"' in config
     assert "RAW_PROBABILITIES" in config
