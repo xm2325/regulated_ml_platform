@@ -67,13 +67,16 @@ jobs:
       - name: Stop after a test failure
         if: steps.pytest.outcome == 'failure'
         run: exit 1
-      - name: Run quality and supply-chain gates
-        run: |
-          make lint
-          make security
-          make audit
-          make audit-registry
-          make audit-registry-client
+      - name: Ruff lint gate
+        run: make lint
+      - name: Bandit security gate
+        run: make security
+      - name: Runtime dependency audit
+        run: make audit
+      - name: Registry server dependency audit
+        run: make audit-registry
+      - name: Registry client dependency audit
+        run: make audit-registry-client
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
