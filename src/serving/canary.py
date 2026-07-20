@@ -329,6 +329,8 @@ class CanaryController:
 
     def _record(self, record: CanaryRecord) -> None:
         with self._lock:
+            if self._state.state not in {"warming", "healthy"}:
+                return
             self._records.append(record)
 
     def evaluate(self) -> dict[str, Any]:
@@ -450,6 +452,16 @@ class CanaryController:
             state = asdict(self._state)
             records = list(self._records)
             limits = asdict(self._limits)
+        promoted_version = state.get("promoted_registry_version")
+        if state["state"] == "promoted" and promoted_version:
+            current_champion = self._runtime.status().get("registry_version")
+            if current_champion and str(current_champion) != str(promoted_version):
+                state["state"] = "rolled_back"
+                state["last_transition"] = "external_rollback_detected"
+                state["last_evaluation_decision"] = "ROLLED_BACK"
+                state["last_evaluation_reasons"] = [
+                    f"active champion registry version {current_champion} no longer matches promoted canary version {promoted_version}"
+                ]
         state["metrics"] = self._metrics(records)
         state["limits"] = limits
         state["auto_promote_enabled"] = self._auto_promote
