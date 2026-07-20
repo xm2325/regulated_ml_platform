@@ -13,14 +13,17 @@ def test_health_endpoint():
     assert "policy_threshold" in body
     assert body["model_source"] in {"local", "registry"}
     assert "runtime_state" in body
+    assert "canary_state" in body
 
 
 def test_version_endpoint():
     body = client.get("/version").json()
-    assert body["platform_version"] == "0.8.0"
-    assert body["service_version"] == "0.8.0"
+    assert body["platform_version"] == "0.9.0"
+    assert body["service_version"] == "0.9.0"
     assert body["model_release_version"] == "0.6.0"
     assert body["model_source"] in {"local", "registry"}
+    assert body["canary_enabled"] is False
+    assert body["canary_state"] == "disabled"
 
 
 def test_predict_endpoint():
@@ -36,6 +39,9 @@ def test_predict_endpoint():
     assert body["model_source"] == "local"
     assert body["runtime_state"] == "ready_local"
     assert body["registry_model_version"] is None
+    assert body["served_model_role"] == "champion"
+    assert body["canary_state"] == "disabled"
+    assert body["canary_assignment"] == "champion"
 
 
 def test_runtime_model_endpoint():
@@ -44,9 +50,18 @@ def test_runtime_model_endpoint():
     body = response.json()
     assert body["requested_source"] == "local"
     assert body["active_source"] == "local"
-    assert body["service_version"] == "0.8.0"
+    assert body["service_version"] == "0.9.0"
     assert body["model_release_version"] == "0.6.0"
     assert "last_reload_error" not in body
+
+
+def test_canary_status_endpoint_is_disabled_by_default():
+    response = client.get("/canary/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is False
+    assert body["state"] == "disabled"
+    assert body["metrics"]["window_requests"] == 0
 
 
 def test_metrics_endpoint():
@@ -55,6 +70,8 @@ def test_metrics_endpoint():
     assert "prediction_request_count" in response.text
     assert "regulated_ai_registry_model_active" in response.text
     assert "regulated_ai_model_reload_successes" in response.text
+    assert "regulated_ai_canary_state" in response.text
+    assert "regulated_ai_canary_action_disagreement_rate" in response.text
 
 
 def test_shadow_predict_endpoint():
