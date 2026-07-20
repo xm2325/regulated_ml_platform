@@ -48,48 +48,9 @@ jobs:
       - name: Generate interface, SBOM, release pack, and site
         run: make openapi sbom manifest approval site
       - name: Run automated tests
-        id: pytest
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          pytest -q > pytest.log 2>&1
-          status=$?
-          cat pytest.log
-          exit $status
-      - name: Upload pytest diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-diagnostics
-          path: pytest.log
-          retention-days: 7
-      - name: Stop after a test failure
-        if: steps.pytest.outcome == 'failure'
-        run: exit 1
+        run: make test
       - name: Ruff lint gate
-        id: ruff
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          {
-            ruff --version
-            ruff check --fix --diff src tests
-          } > ruff.log 2>&1
-          status=$?
-          cat ruff.log
-          exit $status
-      - name: Upload Ruff diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ruff-diagnostics
-          path: ruff.log
-          retention-days: 7
-      - name: Stop after a Ruff failure
-        if: steps.ruff.outcome == 'failure'
-        run: exit 1
+        run: make lint
       - name: Bandit security gate
         run: make security
       - name: Runtime dependency audit
@@ -174,8 +135,8 @@ jobs:
           status=$?
           cat kind-smoke-test.log
           exit $status
-      - name: Upload kind diagnostic log
-        if: always()
+      - name: Upload kind diagnostic log on failure
+        if: steps.kind_smoke.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: kind-smoke-test-log
