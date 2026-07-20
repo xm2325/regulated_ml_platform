@@ -1,0 +1,13 @@
+min_replicas: 1
+max_replicas: 8
+scale_out:
+  gpu_utilization_at_or_above: 0.85
+  queue_time_ms_at_or_above: 8.0
+scale_in:
+  gpu_utilization_at_or_below: 0.30
+  queue_time_ms_at_or_below: 1.0
+  minimum_average_batch_size: 2.0
+cooldown_seconds:
+  scale_out: 120
+  scale_in: 600
+require_accelerator_decision: GPU_ELIGIBLE
