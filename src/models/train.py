@@ -36,7 +36,7 @@ from src.models.evaluation import (
     write_model_evaluation,
 )
 
-MODEL_VERSION = settings.service_version
+MODEL_VERSION = settings.model_release_version
 
 
 def get_git_commit() -> str:
@@ -125,6 +125,8 @@ def train(input_path: Path, model_dir: Path, reports_dir: Path, random_state: in
         "model_name": best_name,
         "model_variant": "platt_calibrated",
         "model_version": MODEL_VERSION,
+        "service_version": settings.service_version,
+        "platform_version": settings.platform_version,
         "policy_version": settings.policy_version,
         "feature_schema_version": settings.feature_schema_version,
         "created_at": datetime.now(timezone.utc).isoformat(),
