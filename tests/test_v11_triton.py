@@ -2,7 +2,6 @@ import src.operations.accelerator_policy as accelerator_policy
 import src.operations.gpu_autoscaling as gpu_autoscaling
 import src.serving.triton_export as triton_export
 
-
 ACCELERATOR_POLICY = {
     "gpu_candidate_families": ["neural_network", "transformer"],
     "minimum_gpu_speedup_ratio": 1.5,
