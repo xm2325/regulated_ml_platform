@@ -10,26 +10,30 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, ge
 
 from src.core.config import settings
 from src.core.telemetry import log_event
+from src.serving.canary import CanaryController
 from src.serving.review_workflow import review_route
 from src.serving.runtime_manager import ModelRuntimeManager
 from src.serving.schemas import ExplainResponse, PredictionRequest, PredictionResponse, ReviewRouteResponse, ShadowPredictionResponse
 
 runtime = ModelRuntimeManager()
+canary = CanaryController(runtime)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     runtime.start_background_reload()
+    canary.start_background_control()
     try:
         yield
     finally:
+        canary.stop_background_control()
         runtime.stop_background_reload()
 
 
 app = FastAPI(
     title="Regulated AI MLOps Platform",
     version=settings.service_version,
-    description="A synthetic regulated-finance MLOps reference implementation with explicit model, policy, review, registry, and audit layers.",
+    description="A synthetic regulated-finance MLOps reference implementation with explicit model, policy, review, registry, canary, and audit layers.",
     lifespan=lifespan,
 )
 
@@ -45,6 +49,15 @@ RUNTIME_DEGRADED = Gauge("regulated_ai_runtime_degraded", "Whether registry serv
 MODEL_RELOAD_ATTEMPTS = Gauge("regulated_ai_model_reload_attempts", "Registry model reload attempts in this process")
 MODEL_RELOAD_SUCCESSES = Gauge("regulated_ai_model_reload_successes", "Successful registry model reloads in this process")
 MODEL_RELOAD_FAILURES = Gauge("regulated_ai_model_reload_failures", "Failed registry model reloads in this process")
+CANARY_ENABLED = Gauge("regulated_ai_canary_enabled", "Whether canary routing is enabled")
+CANARY_STATE = Gauge("regulated_ai_canary_state", "Canary state code: 0 disabled, 1 waiting, 2 warming, 3 healthy, 4 stopped, 5 promoted")
+CANARY_TRAFFIC_PERCENT = Gauge("regulated_ai_canary_traffic_percent", "Configured percentage of requests assigned to challenger")
+CANARY_CHALLENGER_SERVED = Gauge("regulated_ai_canary_challenger_served", "Challenger-served requests in the active evidence window")
+CANARY_ACTION_DISAGREEMENT_RATE = Gauge("regulated_ai_canary_action_disagreement_rate", "Champion/challenger action disagreement rate")
+CANARY_PROBABILITY_DELTA_P95 = Gauge("regulated_ai_canary_probability_delta_p95", "P95 absolute champion/challenger probability delta")
+CANARY_CHALLENGER_ERROR_RATE = Gauge("regulated_ai_canary_challenger_error_rate", "Challenger prediction error rate")
+CANARY_LATENCY_RATIO = Gauge("regulated_ai_canary_latency_ratio", "Mean challenger latency divided by mean champion latency")
+CANARY_ASSIGNMENTS = Counter("regulated_ai_canary_assignments_total", "Served canary assignments", ["served_role"])
 
 
 def _runtime_status() -> dict[str, Any]:
@@ -59,7 +72,30 @@ def _runtime_status() -> dict[str, Any]:
     return status
 
 
-@ app.middleware("http")
+def _canary_status() -> dict[str, Any]:
+    status = canary.status()
+    metrics = status["metrics"]
+    state_codes = {
+        "disabled": 0,
+        "disabled_non_registry_runtime": 0,
+        "waiting_for_challenger": 1,
+        "warming": 2,
+        "healthy": 3,
+        "stopped": 4,
+        "promoted": 5,
+    }
+    CANARY_ENABLED.set(1 if status["enabled"] else 0)
+    CANARY_STATE.set(state_codes.get(str(status["state"]), -1))
+    CANARY_TRAFFIC_PERCENT.set(float(status["traffic_percent"]))
+    CANARY_CHALLENGER_SERVED.set(float(metrics["challenger_served"]))
+    CANARY_ACTION_DISAGREEMENT_RATE.set(float(metrics["action_disagreement_rate"]))
+    CANARY_PROBABILITY_DELTA_P95.set(float(metrics["probability_delta_p95"] or 0.0))
+    CANARY_CHALLENGER_ERROR_RATE.set(float(metrics["challenger_error_rate"]))
+    CANARY_LATENCY_RATIO.set(float(metrics["latency_ratio"] or 0.0))
+    return status
+
+
+@app.middleware("http")
 async def request_observability(request: Request, call_next):  # type: ignore[no-untyped-def]
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     start = time.perf_counter()
@@ -100,6 +136,7 @@ def health() -> dict[str, Any]:
         "runtime_state": status["runtime_state"],
         "registry_model_version": status["registry_version"],
         "policy_threshold": predictor.policy_threshold,
+        "canary_state": _canary_status()["state"],
     }
 
 
@@ -115,6 +152,7 @@ def ready() -> dict[str, Any]:
         "model_source": status["active_source"],
         "model_version": predictor.model_version,
         "registry_model_version": status["registry_version"],
+        "canary_state": _canary_status()["state"],
     }
 
 
@@ -122,6 +160,7 @@ def ready() -> dict[str, Any]:
 def version() -> dict[str, Any]:
     status = _runtime_status()
     predictor = runtime.current_predictor()
+    canary_status = _canary_status()
     return {
         "platform_version": settings.platform_version,
         "service_version": settings.service_version,
@@ -137,6 +176,9 @@ def version() -> dict[str, Any]:
         "registry_model_version": status["registry_version"],
         "registry_run_id": status["registry_run_id"],
         "last_reload_status": status["last_reload_status"],
+        "canary_enabled": canary_status["enabled"],
+        "canary_state": canary_status["state"],
+        "challenger_registry_version": canary_status["challenger_registry_version"],
     }
 
 
@@ -150,12 +192,22 @@ def runtime_model() -> dict[str, Any]:
     return status
 
 
+@app.get("/canary/status")
+def canary_status() -> dict[str, Any]:
+    return _canary_status()
+
+
+@app.get("/canary/evaluate")
+def canary_evaluate() -> dict[str, Any]:
+    return canary.evaluate()
+
+
 @app.get("/decision-contract")
 def decision_contract() -> dict[str, Any]:
     status = _runtime_status()
     predictor = runtime.current_predictor()
     return {
-        "contract_version": "decision-contract-v2",
+        "contract_version": "decision-contract-v3",
         "model_version": predictor.model_version,
         "model_source": status["active_source"],
         "registry_model_version": status["registry_version"],
@@ -164,12 +216,17 @@ def decision_contract() -> dict[str, Any]:
         "score_range": [0.0, 1.0],
         "actions": ["no_support", "cash_buffer_warning", "investment_support", "risk_review"],
         "review_routes": ["auto_serve", "manual_review"],
+        "serving_roles": ["champion", "challenger", "champion_fallback"],
         "audit_fields": [
             "decision_id",
             "audit_event_id",
             "model_version",
             "model_source",
             "registry_model_version",
+            "served_model_role",
+            "canary_assignment",
+            "comparison_champion_registry_version",
+            "comparison_challenger_registry_version",
             "policy_version",
             "feature_schema_version",
         ],
@@ -182,8 +239,9 @@ def predict(request: PredictionRequest) -> dict[str, Any]:
     PREDICTION_REQUEST_COUNT.inc()
     start = time.perf_counter()
     try:
-        result = runtime.predict(request)
+        result = canary.predict(request)
         DECISION_COUNT.labels(result["recommended_action"], result["review_route"]).inc()
+        CANARY_ASSIGNMENTS.labels(result["served_model_role"]).inc()
         return result
     except Exception as exc:
         PREDICTION_ERROR_COUNT.inc()
@@ -194,7 +252,7 @@ def predict(request: PredictionRequest) -> dict[str, Any]:
 
 @app.post("/explain", response_model=ExplainResponse)
 def explain(request: PredictionRequest) -> dict[str, Any]:
-    result = runtime.predict(request)
+    result = canary.predict(request)
     return {
         "customer_id": request.customer_id,
         "decision_id": result["decision_id"],
@@ -215,7 +273,7 @@ def explain(request: PredictionRequest) -> dict[str, Any]:
 
 @app.post("/review-route", response_model=ReviewRouteResponse)
 def route_for_review(request: PredictionRequest) -> dict[str, Any]:
-    return review_route(request, runtime.predict(request))
+    return review_route(request, canary.predict(request))
 
 
 @app.post("/shadow-predict", response_model=ShadowPredictionResponse)
@@ -228,4 +286,5 @@ def shadow_predict(request: PredictionRequest) -> dict[str, Any]:
 @app.get("/metrics")
 def metrics() -> Response:
     _runtime_status()
+    _canary_status()
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
