@@ -90,6 +90,8 @@ trainingJob:
   priorityClassName: regulated-ai-training
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 2
+  dataPvcName: regulated-ai-training-data
+  outputPvcName: regulated-ai-training-output
   command:
     - python
     - -m
