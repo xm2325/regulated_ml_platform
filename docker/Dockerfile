@@ -16,8 +16,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLATFORM_VERSION=0.8.0 \
     SERVICE_VERSION=0.8.0 \
     MODEL_RELEASE_VERSION=0.6.0 \
+    REGISTRY_CACHE_DIR=/var/lib/regulated-ai/registry-cache \
     GIT_COMMIT=${GIT_COMMIT}
-RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --home-dir /app app
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --home-dir /app app \
+    && mkdir -p /var/lib/regulated-ai/registry-cache \
+    && chown -R 10001:10001 /var/lib/regulated-ai
 WORKDIR /app
 COPY --from=builder /wheels /wheels
 RUN python -m pip install --no-cache-dir /wheels/* && rm -rf /wheels
