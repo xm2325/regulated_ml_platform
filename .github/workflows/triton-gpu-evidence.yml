@@ -1,0 +1,86 @@
+name: Triton runtime evidence on self-hosted GPU
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  triton-runtime-evidence:
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build and validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt -r requirements-onnx.txt
+      - name: Verify NVIDIA runtime exists
+        run: |
+          set -euo pipefail
+          nvidia-smi
+          docker info
+      - name: Build validated model and Triton repository
+        run: make data features train triton
+      - name: Assert accelerator policy for current model before runtime
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open("reports/accelerator_decision.json"))
+          print(json.dumps(report, indent=2))
+          if report["decision"] != "CPU_ONLY":
+              raise SystemExit("Current reference champion is expected to remain CPU_ONLY until real GPU benchmark evidence exists")
+          PY
+      - name: Run real Triton server on the GPU-capable host without claiming GPU model acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name regulated-ai-triton \
+            --gpus all \
+            -p 18000:8000 -p 18002:8002 \
+            -v "$PWD/models/triton/model_repository:/models:ro" \
+            nvcr.io/nvidia/tritonserver:25.06-py3 \
+            tritonserver --model-repository=/models --strict-model-config=true --allow-metrics=true --allow-gpu-metrics=true
+          trap 'docker logs regulated-ai-triton || true; docker stop regulated-ai-triton || true' EXIT
+          for _ in {1..90}; do
+            if curl --fail --silent http://127.0.0.1:18000/v2/health/ready; then
+              break
+            fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:18000/v2/health/ready
+          python -m src.operations.benchmark_triton_http \
+            --triton-url http://127.0.0.1:18000 \
+            --output reports/triton_http_benchmark.json
+          curl --fail --silent http://127.0.0.1:18002/metrics > reports/triton_metrics.prom
+          grep -q 'nv_inference_' reports/triton_metrics.prom
+          grep -q 'nv_gpu_' reports/triton_metrics.prom
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = {
+              "runtime_evidence": "real_triton_server_on_gpu_capable_host",
+              "current_model_accelerator": "cpu",
+              "gpu_host_present": True,
+              "gpu_metrics_endpoint_present": True,
+              "gpu_acceleration_claim": False,
+              "reason": "The validated champion is a tree ensemble and the accelerator policy remains CPU_ONLY without a separate approved GPU-compatible benchmark.",
+          }
+          Path("reports/triton_runtime_boundary.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+          PY
+      - name: Upload real runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: triton-self-hosted-runtime-evidence
+          path: |
+            reports/triton_http_benchmark.json
+            reports/triton_metrics.prom
+            reports/triton_runtime_boundary.json
+            reports/accelerator_decision.json
+            models/triton/contract.json
+          retention-days: 14
