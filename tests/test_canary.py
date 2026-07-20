@@ -123,6 +123,10 @@ def test_canary_assignment_is_stable_and_serves_both_arms(tmp_path: Path) -> Non
     assert "champion" in first
     assert "challenger" in first
 
+    same_customer_first = _request(7)
+    same_customer_new_request = same_customer_first.model_copy(update={"request_id": "a-completely-new-request-id"})
+    assert controller._assigned_role(same_customer_first) == controller._assigned_role(same_customer_new_request)
+
 
 def test_identical_verified_challenger_passes_online_gate(tmp_path: Path) -> None:
     controller = CanaryController(
