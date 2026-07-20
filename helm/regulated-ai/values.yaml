@@ -132,6 +132,10 @@ tritonServing:
   modelFamily: tree_ensemble
   accelerator: cpu
   gpuEvidenceApproved: false
+  gpuEligibleModelFamilies:
+    - neural_network
+    - transformer
+    - convolutional_neural_network
   replicas: 1
   priorityClassName: regulated-ai-inference
   resources:
