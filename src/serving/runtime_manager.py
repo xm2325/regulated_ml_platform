@@ -26,7 +26,17 @@ class RegistryBundleProvider(Protocol):
     def sync(self, alias: str, output_dir: str | Path) -> dict[str, Any]: ...
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 class MlflowRegistryBundleProvider:
+    REQUIRED_FILES = ("model.joblib", "metadata.json", "model_metrics.json", "promotion_gate.json")
+
     def __init__(self) -> None:
         self.config = RegistryConfig(
             tracking_uri=settings.registry_tracking_uri,
@@ -36,7 +46,14 @@ class MlflowRegistryBundleProvider:
         )
 
     def sync(self, alias: str, output_dir: str | Path) -> dict[str, Any]:
-        return sync_alias(self.config, alias, output_dir)
+        destination = Path(output_dir)
+        provenance = sync_alias(self.config, alias, destination)
+        checksums = {name: _sha256(destination / name) for name in self.REQUIRED_FILES}
+        provenance["sha256"] = checksums
+        (destination / "registry_provenance.json").write_text(
+            json.dumps(provenance, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        return provenance
 
 
 @dataclass
@@ -59,14 +76,6 @@ class RuntimeStatus:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _smoke_request() -> PredictionRequest:
@@ -196,9 +205,10 @@ class ModelRuntimeManager:
                     self._status.last_reload_at = _utc_now()
                     self._status.last_reload_status = "unchanged"
                     self._status.last_reload_error = None
+                    shutil.rmtree(staging, ignore_errors=True)
                     return {"status": "unchanged", "registry_version": registry_version}
 
-            candidate = self._validate_candidate_bundle(staging, provenance)
+            self._validate_candidate_bundle(staging, provenance)
             final_dir = self._publish_verified_cache(staging, registry_version, provenance)
             candidate = ModelPredictor(final_dir / "model.joblib", final_dir / "metadata.json")
             probability = candidate.probability(_smoke_request())
