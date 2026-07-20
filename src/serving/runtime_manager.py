@@ -127,12 +127,16 @@ class ModelRuntimeManager:
         )
 
         if requested_source == "registry":
-            self._cache_root.mkdir(parents=True, exist_ok=True)
-            self._load_cached_bundle_if_available()
+            try:
+                self._cache_root.mkdir(parents=True, exist_ok=True)
+                self._load_cached_bundle_if_available()
+            except Exception as exc:
+                self._mark_reload_failure(exc)
+                if self._strict_startup:
+                    raise RuntimeModelError("Registry cache initialization failed and strict startup is enabled") from exc
             try:
                 self.reload_from_registry(force=True)
             except Exception as exc:
-                self._mark_reload_failure(exc)
                 if self._strict_startup and self._status.active_source != "registry":
                     raise RuntimeModelError("Registry startup failed and strict startup is enabled") from exc
 
@@ -182,8 +186,8 @@ class ModelRuntimeManager:
         while not self._stop_event.wait(interval):
             try:
                 self.reload_from_registry()
-            except Exception as exc:  # pragma: no cover - exercised by live integration tests
-                self._mark_reload_failure(exc)
+            except Exception:  # pragma: no cover - exercised by live integration tests
+                continue
 
     def reload_from_registry(self, force: bool = False) -> dict[str, Any]:
         if self._requested_source != "registry":
@@ -192,9 +196,10 @@ class ModelRuntimeManager:
         with self._lock:
             self._status.reload_attempts += 1
 
-        self._cache_root.mkdir(parents=True, exist_ok=True)
-        staging = Path(tempfile.mkdtemp(prefix=".registry-candidate-", dir=self._cache_root))
+        staging: Path | None = None
         try:
+            self._cache_root.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix=".registry-candidate-", dir=self._cache_root))
             provenance = provider.sync(settings.registry_alias, staging)
             registry_version = str(provenance.get("registry_version", ""))
             if not registry_version:
@@ -210,6 +215,7 @@ class ModelRuntimeManager:
 
             self._validate_candidate_bundle(staging, provenance)
             final_dir = self._publish_verified_cache(staging, registry_version, provenance)
+            staging = None
             candidate = ModelPredictor(final_dir / "model.joblib", final_dir / "metadata.json")
             probability = candidate.probability(_smoke_request())
             if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
@@ -237,9 +243,10 @@ class ModelRuntimeManager:
                 model_release_version=candidate.model_version,
             )
             return {"status": "reloaded", "registry_version": registry_version, "model_version": candidate.model_version}
-        except Exception:
-            if staging.exists():
+        except Exception as exc:
+            if staging is not None and staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
+            self._mark_reload_failure(exc)
             raise
 
     def _validate_candidate_bundle(self, bundle: Path, provenance: dict[str, Any]) -> ModelPredictor:
