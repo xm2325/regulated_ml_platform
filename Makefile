@@ -1,4 +1,4 @@
-.PHONY: data features train reports contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports continuous alerts contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -15,6 +15,10 @@ reports:
 	python -m src.governance.promotion_gate --metrics reports/model_metrics.json --config config/promotion_gate.yaml --output-json reports/promotion_gate.json --output-md reports/promotion_gate.md
 	python -m src.models.champion_challenger --metrics reports/model_metrics.json --output-json reports/champion_challenger_report.json --output-md reports/champion_challenger_report.md
 	python -m src.governance.explainability_report --model models/model.joblib --data data/processed/features.csv --output-json reports/explainability_report.json --output-md reports/explainability_report.md --sample-size 600
+continuous:
+	python -m src.operations.continuous_ops --drift reports/drift_summary.json --data-quality reports/data_quality_report.json --output-json reports/continuous_ops_decision.json --output-md reports/continuous_ops_decision.md
+alerts:
+	python -m src.operations.validate_alerting --rules observability/prometheus/regulated-ai-alerts.yaml --repo-root . --output reports/alerting_validation.json
 contract:
 	python -m src.governance.model_contract --metadata models/metadata.json --output-json models/model_contract.json --output-md docs/model_contract.md
 batch:
@@ -50,7 +54,7 @@ audit-registry-client:
 serve:
 	uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker:
-	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:0.8.0 .
+	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.0.0 .
 registry-up:
 	docker compose -f docker-compose.registry.yml up -d --build postgres minio minio-init mlflow
 registry-down:
@@ -67,6 +71,6 @@ registry-verify:
 	docker compose -f docker-compose.registry.yml --profile registry run --rm registry-cli verify --alias champion --request examples/review_request.json
 registry-smoke:
 	bash scripts/registry_stack_smoke.sh
-evidence: data features train reports contract batch load deployment incident openapi sbom manifest approval site test
+evidence: data features train reports continuous alerts contract batch load deployment incident openapi sbom manifest approval site test
 ci: evidence lint security audit audit-registry audit-registry-client
 all: evidence
