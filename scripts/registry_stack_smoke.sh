@@ -5,15 +5,21 @@ COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.registry.yml}
 OUT_DIR=${OUT_DIR:-reports/registry_integration}
 mkdir -p "$OUT_DIR"
 
+capture_runtime_diagnostics() {
+  docker compose -f "$COMPOSE_FILE" --profile runtime --profile registry ps -a > "$OUT_DIR/compose_ps.txt" 2>&1 || true
+  docker compose -f "$COMPOSE_FILE" --profile runtime logs --no-color api-registry-runtime > "$OUT_DIR/api_runtime.log" 2>&1 || true
+}
+
 cleanup() {
   status=$?
-  docker compose -f "$COMPOSE_FILE" logs --no-color > "$OUT_DIR/compose.log" 2>&1 || true
-  docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
+  capture_runtime_diagnostics
+  docker compose -f "$COMPOSE_FILE" --profile runtime --profile registry logs --no-color > "$OUT_DIR/compose.log" 2>&1 || true
+  docker compose -f "$COMPOSE_FILE" --profile runtime --profile registry down -v --remove-orphans >/dev/null 2>&1 || true
   exit "$status"
 }
 trap cleanup EXIT
 
-docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
+docker compose -f "$COMPOSE_FILE" --profile runtime --profile registry down -v --remove-orphans >/dev/null 2>&1 || true
 docker compose -f "$COMPOSE_FILE" up -d --build postgres minio minio-init mlflow
 
 for _ in {1..90}; do
@@ -52,13 +58,26 @@ run_registry verify \
   --output "$OUT_DIR/verify_before_api.json"
 
 # Start the same API image in registry mode. Strict startup requires a valid champion.
-docker compose -f "$COMPOSE_FILE" --profile runtime up -d --build api-registry-runtime
-for _ in {1..90}; do
+if ! docker compose -f "$COMPOSE_FILE" --profile runtime up -d --build api-registry-runtime > "$OUT_DIR/api_compose_up.log" 2>&1; then
+  cat "$OUT_DIR/api_compose_up.log"
+  capture_runtime_diagnostics
+  exit 1
+fi
+api_ready=0
+for _ in {1..60}; do
   if curl --fail --silent http://127.0.0.1:8002/ready > "$OUT_DIR/api_ready_initial.json" 2>/dev/null; then
+    api_ready=1
     break
   fi
   sleep 2
 done
+if [[ "$api_ready" != "1" ]]; then
+  capture_runtime_diagnostics
+  echo "Registry-backed API did not become ready." >&2
+  cat "$OUT_DIR/compose_ps.txt" >&2 || true
+  cat "$OUT_DIR/api_runtime.log" >&2 || true
+  exit 1
+fi
 curl --fail --silent http://127.0.0.1:8002/version > "$OUT_DIR/api_version_initial.json"
 initial_version=$(python -c 'import json; print(json.load(open("reports/registry_integration/api_version_initial.json"))["registry_model_version"])')
 
@@ -102,6 +121,7 @@ run_registry sync \
   --output-dir "$OUT_DIR/synced_champion" \
   --output "$OUT_DIR/sync.json"
 
+capture_runtime_diagnostics
 python - <<'PY'
 import json
 from pathlib import Path
