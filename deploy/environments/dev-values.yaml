@@ -1,0 +1,17 @@
+replicaCount: 1
+podDisruptionBudget:
+  enabled: false
+registryRuntime:
+  enabled: true
+  canary:
+    enabled: true
+    trafficPercent: 25
+    minRequests: 40
+    minChallengerRequests: 5
+    autoPromoteEnabled: false
+autoscaling:
+  enabled: false
+resourceQuota:
+  enabled: true
+trainingJob:
+  enabled: false
