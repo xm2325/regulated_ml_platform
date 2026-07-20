@@ -1,6 +1,6 @@
+import src.serving.triton_export as triton_export
 from src.operations.accelerator_policy import evaluate_accelerator_policy
 from src.operations.gpu_autoscaling import decide_gpu_scaling
-from src.serving import triton_export
 
 
 ACCELERATOR_POLICY = {
