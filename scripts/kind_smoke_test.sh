@@ -85,6 +85,20 @@ grep -q 'kind: CronJob' /tmp/rendered-gpu-training-chart.yaml
 grep -q 'concurrencyPolicy: Forbid' /tmp/rendered-gpu-training-chart.yaml
 grep -q 'suspend: true' /tmp/rendered-gpu-training-chart.yaml
 
+# Production GitOps values must render an immutable repository@sha256 identity and keep auto-promotion disabled.
+IMMUTABLE_DIGEST="sha256:$(printf 'a%.0s' {1..64})"
+helm template regulated-ai-prod helm/regulated-ai \
+  -f deploy/environments/prod-values.yaml \
+  --set image.repository="${IMAGE_NAME}" \
+  --set image.digest="${IMMUTABLE_DIGEST}" \
+  --set image.pullPolicy=Never \
+  --set networkPolicy.enabled=false > /tmp/rendered-prod-chart.yaml
+kubectl apply --dry-run=server -f /tmp/rendered-prod-chart.yaml
+
+grep -q "image: \"${IMAGE_NAME}@${IMMUTABLE_DIGEST}\"" /tmp/rendered-prod-chart.yaml
+grep -q 'name: CANARY_AUTO_PROMOTE_ENABLED' /tmp/rendered-prod-chart.yaml
+grep -A1 'name: CANARY_AUTO_PROMOTE_ENABLED' /tmp/rendered-prod-chart.yaml | grep -q 'value: "false"'
+
 helm upgrade --install regulated-ai helm/regulated-ai \
   --set image.repository="${IMAGE_NAME}" \
   --set image.tag="${IMAGE_TAG}" \
