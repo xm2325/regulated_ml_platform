@@ -47,6 +47,11 @@ class PredictionResponse(BaseModel):
     registry_model_name: str | None = None
     registry_alias: str | None = None
     registry_model_version: str | None = None
+    served_model_role: Literal["champion", "challenger", "champion_fallback"] = "champion"
+    canary_state: str = "disabled"
+    canary_assignment: Literal["champion", "challenger"] = "champion"
+    comparison_champion_registry_version: str | None = None
+    comparison_challenger_registry_version: str | None = None
 
 
 class ExplainResponse(BaseModel):
