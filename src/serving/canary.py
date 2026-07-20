@@ -250,7 +250,7 @@ class CanaryController:
         if not active or self._traffic_percent <= 0:
             return "champion"
         key = request.request_id or request.customer_id
-        digest = hashlib.sha256(f"{settings.canary_assignment_seed}:{key}".encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(f"{settings.canary_assignment_seed}:{key}".encode()).hexdigest()
         bucket = int(digest[:8], 16) % 10_000
         return "challenger" if bucket < round(self._traffic_percent * 100) else "champion"
 
