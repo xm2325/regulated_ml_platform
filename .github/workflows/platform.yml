@@ -62,7 +62,7 @@ jobs:
           exit $status
       - name: Upload pytest diagnostics on failure
         if: steps.pytest.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pytest-diagnostics
           path: pytest.log
@@ -82,7 +82,7 @@ jobs:
           exit $status
       - name: Upload Ruff diagnostics on failure
         if: steps.ruff.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ruff-diagnostics
           path: ruff.log
@@ -101,7 +101,7 @@ jobs:
       - name: Registry client dependency audit
         run: make audit-registry-client
       - name: Upload model artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: model-artifacts
           path: |
@@ -112,7 +112,7 @@ jobs:
             models/triton/
           retention-days: 14
       - name: Upload release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-evidence
           path: |
@@ -126,7 +126,7 @@ jobs:
             docs/runbooks/
           retention-days: 14
       - name: Upload generated site
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: generated-site
           path: site/
@@ -197,7 +197,7 @@ jobs:
           cp models/triton/model_repository/support_base/config.pbtxt reports/triton_contract/support_base_config.pbtxt
           cp models/triton/model_repository/support_calibrator/config.pbtxt reports/triton_contract/support_calibrator_config.pbtxt
           cp models/triton/model_repository/support_ensemble/config.pbtxt reports/triton_contract/support_ensemble_config.pbtxt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: triton-serving-contract-evidence
           path: reports/triton_contract/
@@ -251,7 +251,7 @@ jobs:
           exit $status
       - name: Upload kind diagnostic log on failure
         if: steps.kind_smoke.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kind-smoke-test-log
           path: kind-smoke-test.log
@@ -297,7 +297,7 @@ jobs:
             --output-json reports/environment_promotion/dev_to_preprod.json \
             --output-md reports/environment_promotion/dev_to_preprod.md
       - name: Upload dev-to-preprod promotion evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: environment-promotion-preprod
           path: reports/environment_promotion/
@@ -313,7 +313,7 @@ jobs:
           sha256sum release-image/tested-container-image.tar.gz > release-image/tested-container-image.tar.gz.sha256
       - name: Upload tested image for release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tested-container-image
           path: release-image/
@@ -351,7 +351,7 @@ jobs:
         run: bash scripts/registry_stack_smoke.sh
       - name: Upload registry runtime integration evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: registry-integration-evidence
           path: reports/registry_integration/
@@ -428,7 +428,7 @@ jobs:
           print(json.dumps(report, indent=2))
           PY
       - name: Upload production promotion control evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-promotion-control
           path: reports/environment_promotion/
