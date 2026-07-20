@@ -41,7 +41,7 @@ helm template regulated-ai helm/regulated-ai \
 
 kubectl apply --dry-run=server -f /tmp/rendered-chart.yaml
 
-# Registry mode remains opt-in, but its Helm path is rendered and validated on every CI run.
+# Registry + canary remain opt-in, but the full configuration path is rendered and validated on every CI run.
 helm template regulated-ai-registry helm/regulated-ai \
   --set image.repository="${IMAGE_NAME}" \
   --set image.tag="${IMAGE_TAG}" \
@@ -50,12 +50,18 @@ helm template regulated-ai-registry helm/regulated-ai \
   --set autoscaling.enabled=false \
   --set podDisruptionBudget.enabled=false \
   --set registryRuntime.enabled=true \
+  --set registryRuntime.canary.enabled=true \
+  --set registryRuntime.canary.trafficPercent=5 \
   --set networkPolicy.enabled=true \
   --set networkPolicy.mlflowEgress.enabled=true > /tmp/rendered-registry-chart.yaml
 kubectl apply --dry-run=server -f /tmp/rendered-registry-chart.yaml
 
 grep -q 'name: MODEL_SOURCE' /tmp/rendered-registry-chart.yaml
 grep -q 'value: "registry"' /tmp/rendered-registry-chart.yaml
+grep -q 'name: MLFLOW_CHALLENGER_ALIAS' /tmp/rendered-registry-chart.yaml
+grep -q 'name: CANARY_ENABLED' /tmp/rendered-registry-chart.yaml
+grep -q 'name: CANARY_TRAFFIC_PERCENT' /tmp/rendered-registry-chart.yaml
+grep -q 'name: CANARY_AUTO_PROMOTE_ENABLED' /tmp/rendered-registry-chart.yaml
 grep -q 'mountPath: /var/lib/regulated-ai/registry-cache' /tmp/rendered-registry-chart.yaml
 grep -q 'fsGroupChangePolicy: OnRootMismatch' /tmp/rendered-registry-chart.yaml
 
@@ -77,6 +83,7 @@ PORT_FORWARD_PID=$!
 for _ in {1..30}; do
   if curl --fail --silent "http://127.0.0.1:${PORT}/ready"; then
     curl --fail --silent "http://127.0.0.1:${PORT}/version"
+    curl --fail --silent "http://127.0.0.1:${PORT}/canary/status"
     curl --fail --silent -X POST "http://127.0.0.1:${PORT}/predict" \
       -H 'Content-Type: application/json' \
       --data @examples/review_request.json

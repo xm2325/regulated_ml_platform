@@ -34,30 +34,26 @@ run_registry() {
   docker compose -f "$COMPOSE_FILE" --profile registry run --rm registry-cli "$@"
 }
 
+# Establish a safe champion A and leave B as the challenger for live canary traffic.
 run_registry register \
   --model-version 0.6.0-ci-a \
   --output "$OUT_DIR/register_a.json"
 run_registry promote \
   --gate reports/promotion_gate.json \
   --output "$OUT_DIR/promote_a.json"
-
 run_registry register \
   --model-version 0.6.0-ci-b \
   --output "$OUT_DIR/register_b.json"
-run_registry promote \
-  --gate reports/promotion_gate.json \
-  --output "$OUT_DIR/promote_b.json"
-
-run_registry rollback \
-  --reason "CI rollback drill after second controlled promotion" \
-  --output "$OUT_DIR/rollback_b.json"
 run_registry status --output "$OUT_DIR/status_before_api.json"
 run_registry verify \
   --alias champion \
   --request examples/review_request.json \
-  --output "$OUT_DIR/verify_before_api.json"
+  --output "$OUT_DIR/verify_champion_before_api.json"
+run_registry verify \
+  --alias challenger \
+  --request examples/review_request.json \
+  --output "$OUT_DIR/verify_challenger_before_api.json"
 
-# Start the same API image in registry mode. Strict startup requires a valid champion.
 if ! docker compose -f "$COMPOSE_FILE" --profile runtime up -d --build api-registry-runtime > "$OUT_DIR/api_compose_up.log" 2>&1; then
   cat "$OUT_DIR/api_compose_up.log"
   capture_runtime_diagnostics
@@ -79,34 +75,68 @@ if [[ "$api_ready" != "1" ]]; then
   exit 1
 fi
 curl --fail --silent http://127.0.0.1:8002/version > "$OUT_DIR/api_version_initial.json"
+curl --fail --silent http://127.0.0.1:8002/canary/status > "$OUT_DIR/canary_status_initial.json"
 initial_version=$(python -c 'import json; print(json.load(open("reports/registry_integration/api_version_initial.json"))["registry_model_version"])')
+challenger_version=$(python -c 'import json; print(json.load(open("reports/registry_integration/register_b.json"))["model_version"])')
+container_id_before=$(docker compose -f "$COMPOSE_FILE" --profile runtime ps -q api-registry-runtime)
+printf '%s\n' "$container_id_before" > "$OUT_DIR/api_container_id_before.txt"
 
-# Register and promote a third version while the API stays up. The background poller must switch it in memory.
-run_registry register \
-  --model-version 0.6.0-ci-c \
-  --output "$OUT_DIR/register_c.json"
-run_registry promote \
-  --gate reports/promotion_gate.json \
-  --output "$OUT_DIR/promote_c.json"
-promoted_version=$(python -c 'import json; print(json.load(open("reports/registry_integration/promote_c.json"))["promoted_version"])')
+# Send deterministic pseudonymous customers through the real API. The API scores both models,
+# serves the challenger only to its assigned bucket, and accumulates online safety evidence.
+: > "$OUT_DIR/canary_predictions.ndjson"
+for i in $(seq 1 24); do
+  python - "$i" <<'PY' > /tmp/canary-request.json
+import json
+import sys
+from pathlib import Path
+request = json.loads(Path("examples/review_request.json").read_text())
+i = int(sys.argv[1])
+request["customer_id"] = f"C_CANARY_{i:03d}"
+request["request_id"] = f"canary-request-{i:04d}"
+print(json.dumps(request))
+PY
+  curl --fail --silent -X POST http://127.0.0.1:8002/predict \
+    -H 'Content-Type: application/json' \
+    -d @/tmp/canary-request.json >> "$OUT_DIR/canary_predictions.ndjson"
+  printf '\n' >> "$OUT_DIR/canary_predictions.ndjson"
+done
+
+# Background controller should evaluate PASS and promote B without an API restart.
+canary_promoted=0
+for _ in {1..60}; do
+  curl --fail --silent http://127.0.0.1:8002/canary/status > "$OUT_DIR/canary_status_after_traffic.json"
+  state=$(python -c 'import json; print(json.load(open("reports/registry_integration/canary_status_after_traffic.json"))["state"])')
+  if [[ "$state" == "promoted" ]]; then
+    canary_promoted=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$canary_promoted" != "1" ]]; then
+  capture_runtime_diagnostics
+  cat "$OUT_DIR/canary_status_after_traffic.json" >&2 || true
+  echo "Canary controller did not promote the healthy challenger." >&2
+  exit 1
+fi
 
 for _ in {1..60}; do
-  curl --fail --silent http://127.0.0.1:8002/version > "$OUT_DIR/api_version_after_promote.json"
-  current=$(python -c 'import json; print(json.load(open("reports/registry_integration/api_version_after_promote.json"))["registry_model_version"])')
-  if [[ "$current" == "$promoted_version" ]]; then
+  curl --fail --silent http://127.0.0.1:8002/version > "$OUT_DIR/api_version_after_canary_promote.json"
+  current=$(python -c 'import json; print(json.load(open("reports/registry_integration/api_version_after_canary_promote.json"))["registry_model_version"])')
+  if [[ "$current" == "$challenger_version" ]]; then
     break
   fi
   sleep 2
 done
 curl --fail --silent -X POST http://127.0.0.1:8002/predict \
   -H 'Content-Type: application/json' \
-  -d @examples/review_request.json > "$OUT_DIR/api_prediction_after_promote.json"
-curl --fail --silent http://127.0.0.1:8002/runtime/model > "$OUT_DIR/api_runtime_after_promote.json"
+  -d @examples/review_request.json > "$OUT_DIR/api_prediction_after_canary_promote.json"
+curl --fail --silent http://127.0.0.1:8002/runtime/model > "$OUT_DIR/api_runtime_after_canary_promote.json"
+run_registry status --output "$OUT_DIR/status_after_canary_promote.json"
 
-# Roll back the registry alias without restarting the API; the poller must restore the former champion.
+# Simulate a post-promotion incident. Registry rollback must restore A while the same API container stays alive.
 run_registry rollback \
-  --reason "CI live API rollback drill" \
-  --output "$OUT_DIR/rollback_c.json"
+  --reason "CI post-canary incident rollback drill" \
+  --output "$OUT_DIR/rollback_after_canary.json"
 for _ in {1..60}; do
   curl --fail --silent http://127.0.0.1:8002/version > "$OUT_DIR/api_version_after_rollback.json"
   current=$(python -c 'import json; print(json.load(open("reports/registry_integration/api_version_after_rollback.json"))["registry_model_version"])')
@@ -115,6 +145,9 @@ for _ in {1..60}; do
   fi
   sleep 2
 done
+curl --fail --silent http://127.0.0.1:8002/canary/status > "$OUT_DIR/canary_status_after_rollback.json"
+container_id_after=$(docker compose -f "$COMPOSE_FILE" --profile runtime ps -q api-registry-runtime)
+printf '%s\n' "$container_id_after" > "$OUT_DIR/api_container_id_after.txt"
 run_registry status --output "$OUT_DIR/status_final.json"
 run_registry sync \
   --alias champion \
@@ -128,31 +161,60 @@ from pathlib import Path
 
 root = Path("reports/registry_integration")
 initial = json.loads((root / "api_version_initial.json").read_text())
-after_promote = json.loads((root / "api_version_after_promote.json").read_text())
+initial_canary = json.loads((root / "canary_status_initial.json").read_text())
+after_canary = json.loads((root / "canary_status_after_traffic.json").read_text())
+after_promote = json.loads((root / "api_version_after_canary_promote.json").read_text())
+prediction = json.loads((root / "api_prediction_after_canary_promote.json").read_text())
+runtime = json.loads((root / "api_runtime_after_canary_promote.json").read_text())
+register_b = json.loads((root / "register_b.json").read_text())
 after_rollback = json.loads((root / "api_version_after_rollback.json").read_text())
-prediction = json.loads((root / "api_prediction_after_promote.json").read_text())
-runtime = json.loads((root / "api_runtime_after_promote.json").read_text())
-promote = json.loads((root / "promote_c.json").read_text())
+canary_after_rollback = json.loads((root / "canary_status_after_rollback.json").read_text())
 status = json.loads((root / "status_final.json").read_text())
+container_before = (root / "api_container_id_before.txt").read_text().strip()
+container_after = (root / "api_container_id_after.txt").read_text().strip()
+predictions = [json.loads(line) for line in (root / "canary_predictions.ndjson").read_text().splitlines() if line.strip()]
 
 assert initial["model_source"] == "registry"
 assert initial["runtime_state"] == "ready_registry"
-assert after_promote["registry_model_version"] == str(promote["promoted_version"])
+assert initial_canary["state"] in {"warming", "healthy"}
+assert initial_canary["challenger_registry_version"] == str(register_b["model_version"])
+assert len(predictions) == 24
+assert any(item["served_model_role"] == "challenger" for item in predictions)
+assert any(item["served_model_role"] == "champion" for item in predictions)
+assert all(item["comparison_champion_registry_version"] == initial["registry_model_version"] for item in predictions)
+assert all(item["comparison_challenger_registry_version"] == str(register_b["model_version"]) for item in predictions)
+assert after_canary["state"] == "promoted"
+assert after_canary["last_transition"] == "automatic_promotion"
+assert after_canary["promoted_registry_version"] == str(register_b["model_version"])
+assert after_canary["metrics"]["challenger_served"] >= 2
+assert after_canary["metrics"]["action_disagreement_rate"] <= after_canary["limits"]["max_action_disagreement_rate"]
+assert after_promote["registry_model_version"] == str(register_b["model_version"])
 assert after_promote["registry_model_version"] != initial["registry_model_version"]
 assert prediction["model_source"] == "registry"
 assert prediction["registry_model_version"] == after_promote["registry_model_version"]
 assert runtime["reload_successes"] >= 2
 assert after_rollback["registry_model_version"] == initial["registry_model_version"]
-assert after_rollback["registry_model_version"] != after_promote["registry_model_version"]
-assert status["aliases"]["champion"]["version"] == after_rollback["registry_model_version"]
+assert canary_after_rollback["state"] == "rolled_back"
+assert canary_after_rollback["last_transition"] == "external_rollback_detected"
+assert status["aliases"]["champion"]["version"] == initial["registry_model_version"]
+assert container_before and container_before == container_after
 for name in ["model.joblib", "metadata.json", "model_metrics.json", "promotion_gate.json", "registry_provenance.json"]:
     path = root / "synced_champion" / name
     assert path.is_file() and path.stat().st_size > 0, path
 print(json.dumps({
     "status": "PASS",
-    "initial_registry_version": initial["registry_model_version"],
-    "hot_reloaded_registry_version": after_promote["registry_model_version"],
+    "initial_champion_registry_version": initial["registry_model_version"],
+    "canary_challenger_registry_version": str(register_b["model_version"]),
+    "challenger_served_requests": after_canary["metrics"]["challenger_served"],
+    "champion_served_requests": after_canary["metrics"]["champion_served"],
+    "action_disagreement_rate": after_canary["metrics"]["action_disagreement_rate"],
+    "probability_delta_p95": after_canary["metrics"]["probability_delta_p95"],
+    "challenger_error_rate": after_canary["metrics"]["challenger_error_rate"],
+    "latency_ratio": after_canary["metrics"]["latency_ratio"],
+    "automatic_promotion": after_canary["last_transition"],
     "rolled_back_registry_version": after_rollback["registry_model_version"],
+    "canary_state_after_rollback": canary_after_rollback["state"],
+    "same_api_container": container_before == container_after,
     "reload_successes": runtime["reload_successes"],
 }, indent=2))
 PY
