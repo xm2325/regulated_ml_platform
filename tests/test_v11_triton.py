@@ -1,6 +1,9 @@
 from src.operations.accelerator_policy import evaluate_accelerator_policy
 from src.operations.gpu_autoscaling import decide_gpu_scaling
-from src.serving.triton_export import _base_config, _ensemble_config
+from src.serving.triton_export import (
+    _base_config,
+    _ensemble_config,
+)
 
 
 ACCELERATOR_POLICY = {
