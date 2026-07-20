@@ -18,8 +18,8 @@ def test_health_endpoint():
 
 def test_version_endpoint():
     body = client.get("/version").json()
-    assert body["platform_version"] == "0.9.0"
-    assert body["service_version"] == "0.9.0"
+    assert body["platform_version"] == "1.0.0"
+    assert body["service_version"] == "1.0.0"
     assert body["model_release_version"] == "0.6.0"
     assert body["model_source"] in {"local", "registry"}
     assert body["canary_enabled"] is False
@@ -50,7 +50,7 @@ def test_runtime_model_endpoint():
     body = response.json()
     assert body["requested_source"] == "local"
     assert body["active_source"] == "local"
-    assert body["service_version"] == "0.9.0"
+    assert body["service_version"] == "1.0.0"
     assert body["model_release_version"] == "0.6.0"
     assert "last_reload_error" not in body
 
