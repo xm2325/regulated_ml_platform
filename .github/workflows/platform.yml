@@ -73,7 +73,10 @@ jobs:
         shell: bash
         run: |
           set +e
-          ruff check src tests > ruff.log 2>&1
+          {
+            ruff --version
+            ruff check --fix --diff src tests
+          } > ruff.log 2>&1
           status=$?
           cat ruff.log
           exit $status
