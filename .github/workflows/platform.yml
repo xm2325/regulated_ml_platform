@@ -68,7 +68,25 @@ jobs:
         if: steps.pytest.outcome == 'failure'
         run: exit 1
       - name: Ruff lint gate
-        run: make lint
+        id: ruff
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          make lint > ruff.log 2>&1
+          status=$?
+          cat ruff.log
+          exit $status
+      - name: Upload Ruff diagnostics on failure
+        if: steps.ruff.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-diagnostics
+          path: ruff.log
+          retention-days: 7
+      - name: Stop after a Ruff failure
+        if: steps.ruff.outcome == 'failure'
+        run: exit 1
       - name: Bandit security gate
         run: make security
       - name: Runtime dependency audit
