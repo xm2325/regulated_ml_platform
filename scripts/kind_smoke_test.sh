@@ -40,6 +40,25 @@ helm template regulated-ai helm/regulated-ai \
   --set networkPolicy.enabled=false > /tmp/rendered-chart.yaml
 
 kubectl apply --dry-run=server -f /tmp/rendered-chart.yaml
+
+# Registry mode remains opt-in, but its Helm path is rendered and validated on every CI run.
+helm template regulated-ai-registry helm/regulated-ai \
+  --set image.repository="${IMAGE_NAME}" \
+  --set image.tag="${IMAGE_TAG}" \
+  --set image.pullPolicy=Never \
+  --set replicaCount=1 \
+  --set autoscaling.enabled=false \
+  --set podDisruptionBudget.enabled=false \
+  --set registryRuntime.enabled=true \
+  --set networkPolicy.enabled=true \
+  --set networkPolicy.mlflowEgress.enabled=true > /tmp/rendered-registry-chart.yaml
+kubectl apply --dry-run=server -f /tmp/rendered-registry-chart.yaml
+
+grep -q 'name: MODEL_SOURCE' /tmp/rendered-registry-chart.yaml
+grep -q 'value: "registry"' /tmp/rendered-registry-chart.yaml
+grep -q 'mountPath: /var/lib/regulated-ai/registry-cache' /tmp/rendered-registry-chart.yaml
+grep -q 'fsGroupChangePolicy: OnRootMismatch' /tmp/rendered-registry-chart.yaml
+
 helm upgrade --install regulated-ai helm/regulated-ai \
   --set image.repository="${IMAGE_NAME}" \
   --set image.tag="${IMAGE_TAG}" \
