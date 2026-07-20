@@ -172,6 +172,8 @@ def test_disagreement_stop_condition_blocks_further_challenger_traffic(tmp_path:
     status = controller.status()
     assert status["state"] == "stopped"
     assert status["last_transition"] == "automatic_stop"
+    frozen_window_size = status["metrics"]["window_requests"]
     result = controller.predict(_request(99))
     assert result["served_model_role"] == "champion"
     assert result["canary_assignment"] == "champion"
+    assert controller.status()["metrics"]["window_requests"] == frozen_window_size
