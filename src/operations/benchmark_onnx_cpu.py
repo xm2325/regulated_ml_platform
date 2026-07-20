@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from statistics import median
-from typing import Any, Callable
+from typing import Any
 
 import joblib
 import numpy as np
@@ -62,18 +64,20 @@ def benchmark(
     base_output = contract["base_probability_output"]
     results: list[dict[str, Any]] = []
 
+    def native_predict(current_batch: pd.DataFrame) -> np.ndarray:
+        return np.asarray(model.predict_proba(current_batch)[:, 1], dtype=np.float64)
+
+    def onnx_predict(current_batch: pd.DataFrame) -> np.ndarray:
+        transformed = _dense_float32(preprocessor.transform(current_batch))
+        raw = base_session.run([base_output], {"FEATURES": transformed})[0]
+        return calibrator_session.run(
+            ["SUPPORT_PROBABILITY"], {"RAW_PROBABILITIES": np.asarray(raw, dtype=np.float32)}
+        )[0].reshape(-1)
+
     for batch_size in batch_sizes:
         batch = frame.iloc[np.arange(batch_size) % len(frame)][feature_columns].reset_index(drop=True)
-
-        def native_call() -> np.ndarray:
-            return np.asarray(model.predict_proba(batch)[:, 1], dtype=np.float64)
-
-        def onnx_call() -> np.ndarray:
-            transformed = _dense_float32(preprocessor.transform(batch))
-            raw = base_session.run([base_output], {"FEATURES": transformed})[0]
-            return calibrator_session.run(
-                ["SUPPORT_PROBABILITY"], {"RAW_PROBABILITIES": np.asarray(raw, dtype=np.float32)}
-            )[0].reshape(-1)
+        native_call = partial(native_predict, batch)
+        onnx_call = partial(onnx_predict, batch)
 
         native_reference = native_call()
         onnx_reference = onnx_call()
