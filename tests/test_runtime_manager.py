@@ -94,11 +94,15 @@ def test_failed_candidate_never_replaces_current_model(tmp_path: Path) -> None:
     provider = FakeRegistryProvider("1")
     manager = ModelRuntimeManager(provider=provider, model_source="registry", cache_dir=tmp_path, strict_startup=True)
     current = manager.current_predictor()
+    initial_failures = manager.status()["reload_failures"]
     provider.version = "2"
     provider.corrupt_after_hash = True
     with pytest.raises(RuntimeModelError, match="checksum"):
         manager.reload_from_registry()
-    assert manager.status()["registry_version"] == "1"
+    status = manager.status()
+    assert status["registry_version"] == "1"
+    assert status["reload_failures"] == initial_failures + 1
+    assert status["runtime_state"] == "degraded_registry_cached"
     assert manager.current_predictor() is current
 
 
@@ -125,4 +129,5 @@ def test_last_verified_registry_cache_survives_registry_outage(tmp_path: Path) -
     assert status["active_source"] == "registry"
     assert status["registry_version"] == "7"
     assert status["runtime_state"] == "degraded_registry_cached"
+    assert status["reload_failures"] == 1
     assert restarted.predict(REQUEST)["registry_model_version"] == "7"
