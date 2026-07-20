@@ -43,6 +43,8 @@ spec:
               value: {{ .Values.registryRuntime.registeredModelName | quote }}
             - name: MLFLOW_CHAMPION_ALIAS
               value: {{ .Values.registryRuntime.championAlias | quote }}
+            - name: MLFLOW_CHALLENGER_ALIAS
+              value: {{ .Values.registryRuntime.challengerAlias | quote }}
             - name: REGISTRY_CACHE_DIR
               value: "/var/lib/regulated-ai/registry-cache"
             - name: REGISTRY_STRICT_STARTUP
@@ -51,6 +53,34 @@ spec:
               value: {{ .Values.registryRuntime.hotReloadEnabled | quote }}
             - name: REGISTRY_RELOAD_INTERVAL_SECONDS
               value: {{ .Values.registryRuntime.reloadIntervalSeconds | quote }}
+            - name: CANARY_ENABLED
+              value: {{ .Values.registryRuntime.canary.enabled | quote }}
+            - name: CANARY_TRAFFIC_PERCENT
+              value: {{ .Values.registryRuntime.canary.trafficPercent | quote }}
+            - name: CANARY_ASSIGNMENT_SEED
+              value: {{ .Values.registryRuntime.canary.assignmentSeed | quote }}
+            - name: CANARY_MIN_REQUESTS
+              value: {{ .Values.registryRuntime.canary.minRequests | quote }}
+            - name: CANARY_MIN_CHALLENGER_REQUESTS
+              value: {{ .Values.registryRuntime.canary.minChallengerRequests | quote }}
+            - name: CANARY_WINDOW_SIZE
+              value: {{ .Values.registryRuntime.canary.windowSize | quote }}
+            - name: CANARY_MAX_ACTION_DISAGREEMENT_RATE
+              value: {{ .Values.registryRuntime.canary.maxActionDisagreementRate | quote }}
+            - name: CANARY_MAX_PROBABILITY_DELTA_P95
+              value: {{ .Values.registryRuntime.canary.maxProbabilityDeltaP95 | quote }}
+            - name: CANARY_MAX_CHALLENGER_ERROR_RATE
+              value: {{ .Values.registryRuntime.canary.maxChallengerErrorRate | quote }}
+            - name: CANARY_MAX_LATENCY_RATIO
+              value: {{ .Values.registryRuntime.canary.maxLatencyRatio | quote }}
+            - name: CANARY_MAX_MANUAL_REVIEW_RATE_INCREASE
+              value: {{ .Values.registryRuntime.canary.maxManualReviewRateIncrease | quote }}
+            - name: CANARY_AUTO_PROMOTE_ENABLED
+              value: {{ .Values.registryRuntime.canary.autoPromoteEnabled | quote }}
+            - name: CANARY_EVALUATION_INTERVAL_SECONDS
+              value: {{ .Values.registryRuntime.canary.evaluationIntervalSeconds | quote }}
+            - name: CANARY_REFRESH_INTERVAL_SECONDS
+              value: {{ .Values.registryRuntime.canary.refreshIntervalSeconds | quote }}
 {{- end }}
           ports:
             - {name: http, containerPort: 8000}
