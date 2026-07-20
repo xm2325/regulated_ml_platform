@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from src.serving.runtime_manager import ModelRuntimeManager, RuntimeModelError
 from src.serving.schemas import PredictionRequest
 
