@@ -9,11 +9,18 @@ REQUEST = {"customer_id": "C_TEST", "age": 45, "annual_income": 52000, "cash_bal
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
-    assert "policy_threshold" in response.json()
+    body = response.json()
+    assert "policy_threshold" in body
+    assert body["model_source"] in {"local", "registry"}
+    assert "runtime_state" in body
 
 
 def test_version_endpoint():
-    assert client.get("/version").json()["service_version"] == "0.6.0"
+    body = client.get("/version").json()
+    assert body["platform_version"] == "0.8.0"
+    assert body["service_version"] == "0.8.0"
+    assert body["model_release_version"] == "0.6.0"
+    assert body["model_source"] in {"local", "registry"}
 
 
 def test_predict_endpoint():
@@ -26,12 +33,28 @@ def test_predict_endpoint():
     assert body["decision_id"].startswith("decision_")
     assert body["policy_version"] == "targeted-support-policy-v3"
     assert body["feature_schema_version"] == "financial_customer_features_v4"
+    assert body["model_source"] == "local"
+    assert body["runtime_state"] == "ready_local"
+    assert body["registry_model_version"] is None
+
+
+def test_runtime_model_endpoint():
+    response = client.get("/runtime/model")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested_source"] == "local"
+    assert body["active_source"] == "local"
+    assert body["service_version"] == "0.8.0"
+    assert body["model_release_version"] == "0.6.0"
+    assert "last_reload_error" not in body
 
 
 def test_metrics_endpoint():
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "prediction_request_count" in response.text
+    assert "regulated_ai_registry_model_active" in response.text
+    assert "regulated_ai_model_reload_successes" in response.text
 
 
 def test_shadow_predict_endpoint():
