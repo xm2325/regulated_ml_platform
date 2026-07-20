@@ -19,14 +19,16 @@ REQUEST = {"customer_id": "C_V6", "request_id": "request-v6-0001", "age": 45, "a
 
 def test_decision_contract_endpoint():
     body = client.get("/decision-contract").json()
-    assert body["contract_version"] == "decision-contract-v2"
+    assert body["contract_version"] == "decision-contract-v3"
     assert "audit_fields" in body
+    assert "served_model_role" in body["audit_fields"]
+    assert "comparison_challenger_registry_version" in body["audit_fields"]
 
 
 def test_request_id_header_is_returned():
     response = client.post("/predict", json=REQUEST, headers={"X-Request-ID": "trace-12345678"})
     assert response.headers["X-Request-ID"] == "trace-12345678"
-    assert response.headers["X-Service-Version"] == "0.8.0"
+    assert response.headers["X-Service-Version"] == "0.9.0"
 
 
 def test_unknown_request_field_is_rejected():
