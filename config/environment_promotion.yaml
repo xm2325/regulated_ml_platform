@@ -13,6 +13,7 @@ transitions:
       - lint
       - security_scan
       - dependency_audit
+      - triton_serving_contract
       - container_smoke
       - helm_kind
   preprod->prod:
@@ -22,6 +23,7 @@ transitions:
       - lint
       - security_scan
       - dependency_audit
+      - triton_serving_contract
       - container_smoke
       - helm_kind
       - registry_integration

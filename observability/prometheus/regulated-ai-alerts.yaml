@@ -66,3 +66,32 @@ groups:
         annotations:
           summary: Champion and challenger action disagreement is above the review threshold
           runbook_url: repo://docs/runbooks/ml_platform_incidents.md#canary-decision-disagreement
+  - name: regulated-ai-triton
+    rules:
+      - alert: RegulatedAITritonQueuePressure
+        expr: regulated_ai:triton_queue_time_per_request_ms:rate5m > 8
+        for: 10m
+        labels:
+          severity: page
+          component: triton-serving
+        annotations:
+          summary: Triton queue time per request is above the serving-capacity threshold
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#triton-queue-pressure
+      - alert: RegulatedAITritonGPUHeadroomLow
+        expr: regulated_ai:triton_gpu_utilization:avg > 0.90 and regulated_ai:triton_queue_time_per_request_ms:rate5m > 5
+        for: 10m
+        labels:
+          severity: page
+          component: gpu-serving
+        annotations:
+          summary: GPU utilization is above the safe headroom ceiling while Triton requests are queueing
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#triton-gpu-headroom-low
+      - alert: RegulatedAITritonGPUUnderutilized
+        expr: regulated_ai:triton_gpu_utilization:avg < 0.20 and regulated_ai:triton_average_batch_size:rate5m < 2
+        for: 30m
+        labels:
+          severity: ticket
+          component: gpu-serving
+        annotations:
+          summary: GPU serving is underutilized and batching is weak; review batching before scaling down
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#triton-gpu-underutilized

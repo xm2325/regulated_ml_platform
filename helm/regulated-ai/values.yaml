@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/xm2325/regulated_ml_platform
-  tag: "service-1.0.0"
+  tag: "service-1.1.0"
   digest: ""
   pullPolicy: IfNotPresent
 replicaCount: 2
@@ -118,3 +118,40 @@ trainingJob:
       - key: nvidia.com/gpu
         operator: Exists
         effect: NoSchedule
+tritonServing:
+  enabled: false
+  serverImage:
+    repository: nvcr.io/nvidia/tritonserver
+    tag: "25.06-py3"
+    pullPolicy: IfNotPresent
+  modelRepositoryImage:
+    repository: ghcr.io/xm2325/regulated_ml_platform-triton-models
+    tag: "model-0.6.0-serving-1.1.0"
+    digest: ""
+    pullPolicy: IfNotPresent
+  modelFamily: tree_ensemble
+  accelerator: cpu
+  gpuEvidenceApproved: false
+  gpuEligibleModelFamilies:
+    - neural_network
+    - transformer
+    - convolutional_neural_network
+  replicas: 1
+  priorityClassName: regulated-ai-inference
+  resources:
+    requests: {cpu: "500m", memory: "1Gi"}
+    limits: {cpu: "2", memory: "4Gi"}
+  gpu:
+    resourceName: nvidia.com/gpu
+    count: 1
+    nodeSelector:
+      accelerator: nvidia-a100
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+  service:
+    type: ClusterIP
+    httpPort: 8000
+    grpcPort: 8001
+    metricsPort: 8002

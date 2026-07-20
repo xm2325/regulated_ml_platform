@@ -1,0 +1,12 @@
+gpu_candidate_families:
+  - neural_network
+  - transformer
+  - convolutional_neural_network
+minimum_gpu_speedup_ratio: 1.50
+maximum_gpu_p95_latency_ratio: 1.10
+minimum_sustained_gpu_utilization: 0.35
+maximum_sustained_gpu_utilization: 0.90
+require_real_gpu_runtime_evidence: true
+require_probability_parity_pass: true
+require_policy_decision_parity_pass: true
+current_tree_ensemble_default: cpu

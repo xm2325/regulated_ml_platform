@@ -1,0 +1,14 @@
+groups:
+  - name: regulated-ai-triton-recording
+    interval: 30s
+    rules:
+      - record: regulated_ai:triton_average_batch_size:rate5m
+        expr: sum(rate(nv_inference_count{model="support_base"}[5m])) / clamp_min(sum(rate(nv_inference_exec_count{model="support_base"}[5m])), 0.001)
+      - record: regulated_ai:triton_queue_time_per_request_ms:rate5m
+        expr: sum(rate(nv_inference_queue_duration_us{model="support_base"}[5m])) / clamp_min(sum(rate(nv_inference_request_success{model="support_base"}[5m])), 0.001) / 1000
+      - record: regulated_ai:triton_request_rate:rate5m
+        expr: sum(rate(nv_inference_request_success{model="support_ensemble"}[5m]))
+      - record: regulated_ai:triton_gpu_utilization:avg
+        expr: avg(nv_gpu_utilization{job="triton"})
+      - record: regulated_ai:triton_gpu_memory_utilization:avg
+        expr: avg(nv_gpu_memory_used_bytes{job="triton"} / clamp_min(nv_gpu_memory_total_bytes{job="triton"}, 1))

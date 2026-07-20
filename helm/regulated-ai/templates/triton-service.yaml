@@ -1,0 +1,22 @@
+{{- if .Values.tritonServing.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+spec:
+  type: {{ .Values.tritonServing.service.type }}
+  selector:
+    app: regulated-ai-triton
+  ports:
+    - name: http
+      port: {{ .Values.tritonServing.service.httpPort }}
+      targetPort: http
+    - name: grpc
+      port: {{ .Values.tritonServing.service.grpcPort }}
+      targetPort: grpc
+    - name: metrics
+      port: {{ .Values.tritonServing.service.metricsPort }}
+      targetPort: metrics
+{{- end }}
