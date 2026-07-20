@@ -29,6 +29,8 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements-runtime.lock
+            requirements-registry-client.lock
+            requirements-mlflow.lock
             requirements.txt
             requirements-dev.txt
       - name: Install development dependencies
@@ -53,6 +55,7 @@ jobs:
           make security
           make audit
           make audit-registry
+          make audit-registry-client
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -99,7 +102,7 @@ jobs:
       - name: Inspect downloaded model artifacts
         run: find models -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
       - name: Build image once
-        run: docker build --progress=plain -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+        run: docker build --progress=plain --build-arg GIT_COMMIT="${GITHUB_SHA}" -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
       - name: Live container smoke test
         shell: bash
         run: |
@@ -160,7 +163,7 @@ jobs:
   registry-integration:
     needs: evidence
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -180,9 +183,9 @@ jobs:
           test -s models/metadata.json
           test -s reports/model_metrics.json
           test -s reports/promotion_gate.json
-      - name: Exercise PostgreSQL, MinIO, MLflow, aliases, promotion, rollback, and sync
+      - name: Exercise registry lifecycle, live API hot reload, prediction, and rollback
         run: bash scripts/registry_stack_smoke.sh
-      - name: Upload registry integration evidence
+      - name: Upload registry runtime integration evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
