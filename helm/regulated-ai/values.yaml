@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/xm2325/regulated_ml_platform
-  tag: "0.6.0"
+  tag: "service-0.8.0"
   pullPolicy: IfNotPresent
 replicaCount: 2
 serviceAccount:
@@ -14,6 +14,22 @@ podDisruptionBudget:
   minAvailable: 1
 networkPolicy:
   enabled: true
+  mlflowEgress:
+    enabled: false
+    namespace: mlops
+    podLabel: mlflow
+    port: 5000
+registryRuntime:
+  enabled: false
+  trackingUri: "http://mlflow.mlops.svc.cluster.local:5000"
+  registryUri: "http://mlflow.mlops.svc.cluster.local:5000"
+  registeredModelName: "regulated-targeted-support-model"
+  championAlias: "champion"
+  strictStartup: true
+  hotReloadEnabled: true
+  reloadIntervalSeconds: 30
+  cache:
+    sizeLimit: "1Gi"
 resources:
   requests: {cpu: "250m", memory: "384Mi"}
   limits: {cpu: "1", memory: "1Gi"}
