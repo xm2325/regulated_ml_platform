@@ -29,6 +29,8 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements-runtime.lock
+            requirements-registry-client.lock
+            requirements-mlflow.lock
             requirements.txt
             requirements-dev.txt
       - name: Install development dependencies
@@ -47,12 +49,16 @@ jobs:
         run: make openapi sbom manifest approval site
       - name: Run automated tests
         run: make test
-      - name: Run quality and supply-chain gates
-        run: |
-          make lint
-          make security
-          make audit
-          make audit-registry
+      - name: Ruff lint gate
+        run: make lint
+      - name: Bandit security gate
+        run: make security
+      - name: Runtime dependency audit
+        run: make audit
+      - name: Registry server dependency audit
+        run: make audit-registry
+      - name: Registry client dependency audit
+        run: make audit-registry-client
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -99,7 +105,7 @@ jobs:
       - name: Inspect downloaded model artifacts
         run: find models -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
       - name: Build image once
-        run: docker build --progress=plain -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+        run: docker build --progress=plain --build-arg GIT_COMMIT="${GITHUB_SHA}" -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
       - name: Live container smoke test
         shell: bash
         run: |
@@ -129,8 +135,8 @@ jobs:
           status=$?
           cat kind-smoke-test.log
           exit $status
-      - name: Upload kind diagnostic log
-        if: always()
+      - name: Upload kind diagnostic log on failure
+        if: steps.kind_smoke.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: kind-smoke-test-log
@@ -160,7 +166,7 @@ jobs:
   registry-integration:
     needs: evidence
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -180,9 +186,9 @@ jobs:
           test -s models/metadata.json
           test -s reports/model_metrics.json
           test -s reports/promotion_gate.json
-      - name: Exercise PostgreSQL, MinIO, MLflow, aliases, promotion, rollback, and sync
+      - name: Exercise registry lifecycle, live API hot reload, prediction, and rollback
         run: bash scripts/registry_stack_smoke.sh
-      - name: Upload registry integration evidence
+      - name: Upload registry runtime integration evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:

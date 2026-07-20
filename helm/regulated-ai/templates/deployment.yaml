@@ -25,11 +25,33 @@ spec:
         runAsUser: 10001
         runAsGroup: 10001
         fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: MODEL_SOURCE
+              value: {{ ternary "registry" "local" .Values.registryRuntime.enabled | quote }}
+{{- if .Values.registryRuntime.enabled }}
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.registryRuntime.trackingUri | quote }}
+            - name: MLFLOW_REGISTRY_URI
+              value: {{ .Values.registryRuntime.registryUri | quote }}
+            - name: MLFLOW_REGISTERED_MODEL_NAME
+              value: {{ .Values.registryRuntime.registeredModelName | quote }}
+            - name: MLFLOW_CHAMPION_ALIAS
+              value: {{ .Values.registryRuntime.championAlias | quote }}
+            - name: REGISTRY_CACHE_DIR
+              value: "/var/lib/regulated-ai/registry-cache"
+            - name: REGISTRY_STRICT_STARTUP
+              value: {{ .Values.registryRuntime.strictStartup | quote }}
+            - name: REGISTRY_HOT_RELOAD_ENABLED
+              value: {{ .Values.registryRuntime.hotReloadEnabled | quote }}
+            - name: REGISTRY_RELOAD_INTERVAL_SECONDS
+              value: {{ .Values.registryRuntime.reloadIntervalSeconds | quote }}
+{{- end }}
           ports:
             - {name: http, containerPort: 8000}
           securityContext:
@@ -52,6 +74,14 @@ spec:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+{{- if .Values.registryRuntime.enabled }}
+            - {name: registry-cache, mountPath: /var/lib/regulated-ai/registry-cache}
+{{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+{{- if .Values.registryRuntime.enabled }}
+        - name: registry-cache
+          emptyDir:
+            sizeLimit: {{ .Values.registryRuntime.cache.sizeLimit | quote }}
+{{- end }}

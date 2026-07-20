@@ -10,4 +10,15 @@ spec:
     - ports: [{protocol: TCP, port: 8000}]
   egress:
     - ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+{{- if and .Values.registryRuntime.enabled .Values.networkPolicy.mlflowEgress.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.mlflowEgress.namespace | quote }}
+          podSelector:
+            matchLabels:
+              app: {{ .Values.networkPolicy.mlflowEgress.podLabel | quote }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.networkPolicy.mlflowEgress.port }}}
+{{- end }}
 {{- end }}

@@ -1,4 +1,4 @@
-.PHONY: data features train reports contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports contract batch load deployment incident openapi manifest approval site test lint security audit audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -45,10 +45,12 @@ audit:
 	python -m pip_audit -r requirements-runtime.lock --strict
 audit-registry:
 	python -m pip_audit -r requirements-mlflow.lock --strict
+audit-registry-client:
+	python -m pip_audit -r requirements-registry-client.lock --strict
 serve:
 	uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker:
-	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:0.6.0 .
+	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:0.8.0 .
 registry-up:
 	docker compose -f docker-compose.registry.yml up -d --build postgres minio minio-init mlflow
 registry-down:
@@ -66,5 +68,5 @@ registry-verify:
 registry-smoke:
 	bash scripts/registry_stack_smoke.sh
 evidence: data features train reports contract batch load deployment incident openapi sbom manifest approval site test
-ci: evidence lint security audit audit-registry
+ci: evidence lint security audit audit-registry audit-registry-client
 all: evidence

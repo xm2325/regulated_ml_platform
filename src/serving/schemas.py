@@ -42,6 +42,11 @@ class PredictionResponse(BaseModel):
     review_route: ReviewRoute
     review_reasons: list[str]
     audit_event_id: str
+    model_source: Literal["local", "registry"] = "local"
+    runtime_state: str = "ready_local"
+    registry_model_name: str | None = None
+    registry_alias: str | None = None
+    registry_model_version: str | None = None
 
 
 class ExplainResponse(BaseModel):
@@ -53,6 +58,9 @@ class ExplainResponse(BaseModel):
     model_version: str
     policy_version: str
     audit_event_id: str
+    model_source: Literal["local", "registry"] = "local"
+    runtime_state: str = "ready_local"
+    registry_model_version: str | None = None
 
 
 class ShadowPredictionResponse(BaseModel):

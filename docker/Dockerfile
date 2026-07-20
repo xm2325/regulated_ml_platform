@@ -2,15 +2,26 @@ FROM python:3.11-slim AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
-COPY requirements-runtime.txt requirements-runtime.lock ./
-RUN python -m pip wheel --wheel-dir /wheels -r requirements-runtime.lock
+COPY requirements-runtime.txt requirements-runtime.lock requirements-registry-client.lock ./
+RUN python -m pip wheel --wheel-dir /wheels -r requirements-runtime.lock -r requirements-registry-client.lock
 
 FROM python:3.11-slim
+ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.source="https://github.com/xm2325/regulated_ml_platform" \
       org.opencontainers.image.description="Regulated AI MLOps platform API" \
       org.opencontainers.image.licenses="MIT"
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_ENV=container SERVICE_VERSION=0.6.0
-RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --home-dir /app app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=container \
+    PLATFORM_VERSION=0.8.0 \
+    SERVICE_VERSION=0.8.0 \
+    MODEL_RELEASE_VERSION=0.6.0 \
+    REGISTRY_CACHE_DIR=/var/lib/regulated-ai/registry-cache \
+    GIT_COMMIT=${GIT_COMMIT}
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --home-dir /app app \
+    && mkdir -p /var/lib/regulated-ai/registry-cache \
+    && chown -R 10001:10001 /var/lib/regulated-ai
 WORKDIR /app
 COPY --from=builder /wheels /wheels
 RUN python -m pip install --no-cache-dir /wheels/* && rm -rf /wheels
