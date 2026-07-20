@@ -1,0 +1,77 @@
+{{- if .Values.trainingJob.enabled }}
+{{- $trainingResources := deepCopy .Values.trainingJob.resources -}}
+{{- if .Values.trainingJob.gpu.enabled -}}
+{{- $_ := set $trainingResources.requests .Values.trainingJob.gpu.resourceName .Values.trainingJob.gpu.count -}}
+{{- $_ := set $trainingResources.limits .Values.trainingJob.gpu.resourceName .Values.trainingJob.gpu.count -}}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: regulated-ai-training
+spec:
+  schedule: {{ .Values.trainingJob.schedule | quote }}
+  suspend: {{ .Values.trainingJob.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.trainingJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.trainingJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: regulated-ai-training
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          automountServiceAccountToken: false
+          priorityClassName: {{ .Values.trainingJob.priorityClassName | quote }}
+{{- if .Values.trainingJob.gpu.enabled }}
+          nodeSelector:
+{{ toYaml .Values.trainingJob.gpu.nodeSelector | indent 12 }}
+          tolerations:
+{{ toYaml .Values.trainingJob.gpu.tolerations | indent 12 }}
+{{- else }}
+{{- with .Values.trainingJob.nodeSelector }}
+          nodeSelector:
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.trainingJob.tolerations }}
+          tolerations:
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          restartPolicy: Never
+          containers:
+            - name: trainer
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+{{ toYaml .Values.trainingJob.command | indent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 10001
+                capabilities: {drop: ["ALL"]}
+              resources:
+{{ toYaml $trainingResources | indent 16 }}
+              volumeMounts:
+                - {name: training-data, mountPath: /training-data, readOnly: true}
+                - {name: training-output, mountPath: /training-output}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: training-data
+              persistentVolumeClaim:
+                claimName: {{ .Values.trainingJob.dataPvcName | quote }}
+            - name: training-output
+              persistentVolumeClaim:
+                claimName: {{ .Values.trainingJob.outputPvcName | quote }}
+            - name: tmp
+              emptyDir: {}
+{{- end }}
