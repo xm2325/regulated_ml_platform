@@ -1,6 +1,7 @@
 image:
   repository: ghcr.io/xm2325/regulated_ml_platform
-  tag: "service-0.9.0"
+  tag: "service-1.0.0"
+  digest: ""
   pullPolicy: IfNotPresent
 replicaCount: 2
 serviceAccount:
@@ -54,3 +55,66 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 6
   targetCPUUtilizationPercentage: 65
+priorityClasses:
+  create: true
+  inference:
+    name: regulated-ai-inference
+    value: 100000
+  training:
+    name: regulated-ai-training
+    value: 1000
+resourceQuota:
+  enabled: true
+  hard:
+    requestsCpu: "8"
+    requestsMemory: "12Gi"
+    limitsCpu: "16"
+    limitsMemory: "24Gi"
+inferenceScheduling:
+  priorityClassName: regulated-ai-inference
+  nodeSelector: {}
+  tolerations: []
+  gpu:
+    enabled: false
+    resourceName: nvidia.com/gpu
+    count: 1
+    nodeSelector:
+      accelerator: nvidia-a100
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+trainingJob:
+  enabled: false
+  schedule: "0 3 * * *"
+  suspend: true
+  priorityClassName: regulated-ai-training
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  dataPvcName: regulated-ai-training-data
+  outputPvcName: regulated-ai-training-output
+  command:
+    - python
+    - -m
+    - src.models.train
+    - --input
+    - /training-data/features.csv
+    - --model-dir
+    - /training-output/models
+    - --reports-dir
+    - /training-output/reports
+  resources:
+    requests: {cpu: "1", memory: "2Gi"}
+    limits: {cpu: "4", memory: "8Gi"}
+  nodeSelector: {}
+  tolerations: []
+  gpu:
+    enabled: false
+    resourceName: nvidia.com/gpu
+    count: 1
+    nodeSelector:
+      accelerator: nvidia-a100
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule

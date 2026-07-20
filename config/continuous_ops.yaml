@@ -1,0 +1,20 @@
+version: continuous-ops-v1
+
+drift:
+  numeric_psi_train_threshold: 0.20
+  categorical_distance_train_threshold: 0.20
+
+performance:
+  min_auc: 0.74
+  max_brier: 0.22
+  max_expected_calibration_error: 0.10
+
+fairness:
+  max_selection_rate_gap: 0.15
+
+controls:
+  data_quality_must_pass: true
+  retraining_destination_alias: challenger
+  auto_promote_after_retraining: false
+  require_offline_promotion_gate: true
+  require_canary_before_champion: true

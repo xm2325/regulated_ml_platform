@@ -38,7 +38,6 @@ helm template regulated-ai helm/regulated-ai \
   --set autoscaling.enabled=false \
   --set podDisruptionBudget.enabled=false \
   --set networkPolicy.enabled=false > /tmp/rendered-chart.yaml
-
 kubectl apply --dry-run=server -f /tmp/rendered-chart.yaml
 
 # Registry + canary remain opt-in, but the full configuration path is rendered and validated on every CI run.
@@ -64,6 +63,41 @@ grep -q 'name: CANARY_TRAFFIC_PERCENT' /tmp/rendered-registry-chart.yaml
 grep -q 'name: CANARY_AUTO_PROMOTE_ENABLED' /tmp/rendered-registry-chart.yaml
 grep -q 'mountPath: /var/lib/regulated-ai/registry-cache' /tmp/rendered-registry-chart.yaml
 grep -q 'fsGroupChangePolicy: OnRootMismatch' /tmp/rendered-registry-chart.yaml
+
+# GPU and scheduled-training controls are configuration-contract tested only: the hosted runner has no NVIDIA GPU.
+helm template regulated-ai-gpu helm/regulated-ai \
+  --set image.repository="${IMAGE_NAME}" \
+  --set image.tag="${IMAGE_TAG}" \
+  --set image.pullPolicy=Never \
+  --set inferenceScheduling.gpu.enabled=true \
+  --set trainingJob.enabled=true \
+  --set trainingJob.suspend=true \
+  --set trainingJob.gpu.enabled=true > /tmp/rendered-gpu-training-chart.yaml
+kubectl apply --dry-run=server -f /tmp/rendered-gpu-training-chart.yaml
+
+grep -q 'kind: ResourceQuota' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'kind: PriorityClass' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'priorityClassName: "regulated-ai-inference"' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'priorityClassName: "regulated-ai-training"' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'nvidia.com/gpu' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'accelerator: nvidia-a100' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'kind: CronJob' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'concurrencyPolicy: Forbid' /tmp/rendered-gpu-training-chart.yaml
+grep -q 'suspend: true' /tmp/rendered-gpu-training-chart.yaml
+
+# Production GitOps values must render an immutable repository@sha256 identity and keep auto-promotion disabled.
+IMMUTABLE_DIGEST="sha256:$(printf 'a%.0s' {1..64})"
+helm template regulated-ai-prod helm/regulated-ai \
+  -f deploy/environments/prod-values.yaml \
+  --set image.repository="${IMAGE_NAME}" \
+  --set image.digest="${IMMUTABLE_DIGEST}" \
+  --set image.pullPolicy=Never \
+  --set networkPolicy.enabled=false > /tmp/rendered-prod-chart.yaml
+kubectl apply --dry-run=server -f /tmp/rendered-prod-chart.yaml
+
+grep -q "image: \"${IMAGE_NAME}@${IMMUTABLE_DIGEST}\"" /tmp/rendered-prod-chart.yaml
+grep -q 'name: CANARY_AUTO_PROMOTE_ENABLED' /tmp/rendered-prod-chart.yaml
+grep -A1 'name: CANARY_AUTO_PROMOTE_ENABLED' /tmp/rendered-prod-chart.yaml | grep -q 'value: "false"'
 
 helm upgrade --install regulated-ai helm/regulated-ai \
   --set image.repository="${IMAGE_NAME}" \

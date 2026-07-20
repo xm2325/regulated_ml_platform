@@ -1,0 +1,68 @@
+groups:
+  - name: regulated-ai-service
+    rules:
+      - alert: RegulatedAIErrorBudgetBurn
+        expr: sum(rate(regulated_ai_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(regulated_ai_http_requests_total[5m])), 0.001) > 0.005
+        for: 10m
+        labels:
+          severity: page
+          component: serving
+        annotations:
+          summary: API 5xx rate is burning the 99.5% availability error budget
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#error-budget-burn
+      - alert: RegulatedAILatencySLOBreach
+        expr: histogram_quantile(0.95, sum by (le) (rate(regulated_ai_http_request_duration_seconds_bucket{path="/predict"}[5m]))) > 0.25
+        for: 15m
+        labels:
+          severity: page
+          component: serving
+        annotations:
+          summary: Prediction p95 latency is above the 250 ms SLO
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#latency-slo-breach
+      - alert: RegulatedAIRuntimeDegraded
+        expr: regulated_ai_runtime_degraded == 1
+        for: 5m
+        labels:
+          severity: page
+          component: model-runtime
+        annotations:
+          summary: Registry serving is using a degraded fallback state
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#runtime-degraded
+      - alert: RegulatedAIRegistryReloadFailure
+        expr: regulated_ai_model_reload_failures > 0
+        for: 2m
+        labels:
+          severity: ticket
+          component: model-runtime
+        annotations:
+          summary: At least one registry model reload failed in the running process
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#registry-reload-failure
+  - name: regulated-ai-canary
+    rules:
+      - alert: RegulatedAICanaryStopped
+        expr: regulated_ai_canary_state == 4
+        for: 1m
+        labels:
+          severity: page
+          component: canary
+        annotations:
+          summary: Canary controller stopped challenger serving after an online safety gate failure
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#canary-stopped
+      - alert: RegulatedAICanaryErrorRate
+        expr: regulated_ai_canary_challenger_error_rate > 0.01
+        for: 2m
+        labels:
+          severity: page
+          component: canary
+        annotations:
+          summary: Challenger prediction error rate is above the canary safety ceiling
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#canary-challenger-failure
+      - alert: RegulatedAICanaryDecisionDisagreement
+        expr: regulated_ai_canary_action_disagreement_rate > 0.05
+        for: 5m
+        labels:
+          severity: ticket
+          component: canary
+        annotations:
+          summary: Champion and challenger action disagreement is above the review threshold
+          runbook_url: repo://docs/runbooks/ml_platform_incidents.md#canary-decision-disagreement

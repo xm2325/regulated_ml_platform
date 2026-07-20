@@ -14,8 +14,8 @@ def _env_bool(name: str, default: bool = False) -> bool:
 @dataclass(frozen=True)
 class ServiceSettings:
     service_name: str = os.getenv("SERVICE_NAME", "regulated-ai-mlops-platform")
-    platform_version: str = os.getenv("PLATFORM_VERSION", "0.9.0")
-    service_version: str = os.getenv("SERVICE_VERSION", "0.9.0")
+    platform_version: str = os.getenv("PLATFORM_VERSION", "1.0.0")
+    service_version: str = os.getenv("SERVICE_VERSION", "1.0.0")
     model_release_version: str = os.getenv("MODEL_RELEASE_VERSION", "0.6.0")
     policy_version: str = os.getenv("POLICY_VERSION", "targeted-support-policy-v3")
     feature_schema_version: str = os.getenv("FEATURE_SCHEMA_VERSION", "financial_customer_features_v4")
