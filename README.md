@@ -116,19 +116,22 @@ This keeps replica/HPA/PDB/canary settings separate from artifact identity.
 
 ### 3. Real CI proves dev → preprod readiness, then blocks prod without approval
 
-The actual tested Docker image produced:
+Each CI run derives its release identity from the **actual Docker image built and smoke-tested in that run**. The run-specific source of truth is the `environment-promotion-preprod/release_identity.json` Actions artifact.
+
+The identity contains:
 
 ```text
-image digest  sha256:a4df2766d951bce08dddca9f191c0bf47486b0e7b39ba1d282a5f1bd2ed503f8
-release ID    2bf37ed424e112fa5efd
-model         0.6.0
-policy        targeted-support-policy-v3
-schema        financial_customer_features_v4
+image_digest           sha256:<actual tested image digest>
+git_commit             <tested Git commit>
+model_release_version  0.6.0
+policy_version          targeted-support-policy-v3
+feature_schema_version  financial_customer_features_v4
+release_id              <derived immutable identity>
 ```
 
-`dev → preprod` was `READY` after the required technical checks passed.
+`dev → preprod` becomes `READY` only after the required technical checks pass.
 
-The **same** release identity was then evaluated for `preprod → prod`. All nine technical checks were `PASS`:
+The **same run-specific release identity** is then evaluated for `preprod → prod`. All nine technical gates must pass:
 
 ```text
 automated tests
@@ -142,7 +145,7 @@ canary evidence
 rollback drill
 ```
 
-but production remained:
+Even after those checks pass, the production control intentionally verifies:
 
 ```text
 status          BLOCKED
@@ -155,6 +158,8 @@ This makes the distinction explicit:
 ```text
 technically releasable ≠ authorized for production
 ```
+
+The image embeds the Git commit, so its digest changes when the source commit changes. Digests are therefore stored as run-specific evidence rather than hardcoded into README text.
 
 ### 4. Inference and training no longer compete as identical Kubernetes workloads
 
