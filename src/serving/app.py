@@ -50,7 +50,10 @@ MODEL_RELOAD_ATTEMPTS = Gauge("regulated_ai_model_reload_attempts", "Registry mo
 MODEL_RELOAD_SUCCESSES = Gauge("regulated_ai_model_reload_successes", "Successful registry model reloads in this process")
 MODEL_RELOAD_FAILURES = Gauge("regulated_ai_model_reload_failures", "Failed registry model reloads in this process")
 CANARY_ENABLED = Gauge("regulated_ai_canary_enabled", "Whether canary routing is enabled")
-CANARY_STATE = Gauge("regulated_ai_canary_state", "Canary state code: 0 disabled, 1 waiting, 2 warming, 3 healthy, 4 stopped, 5 promoted")
+CANARY_STATE = Gauge(
+    "regulated_ai_canary_state",
+    "Canary state code: 0 disabled, 1 waiting, 2 warming, 3 healthy, 4 stopped, 5 promoted, 6 rolled_back",
+)
 CANARY_TRAFFIC_PERCENT = Gauge("regulated_ai_canary_traffic_percent", "Configured percentage of requests assigned to challenger")
 CANARY_CHALLENGER_SERVED = Gauge("regulated_ai_canary_challenger_served", "Challenger-served requests in the active evidence window")
 CANARY_ACTION_DISAGREEMENT_RATE = Gauge("regulated_ai_canary_action_disagreement_rate", "Champion/challenger action disagreement rate")
@@ -74,6 +77,16 @@ def _runtime_status() -> dict[str, Any]:
 
 def _canary_status() -> dict[str, Any]:
     status = canary.status()
+    runtime_status = runtime.status()
+    promoted_version = status.get("promoted_registry_version")
+    current_champion = runtime_status.get("registry_version")
+    if status["state"] == "promoted" and promoted_version and current_champion and str(current_champion) != str(promoted_version):
+        status["state"] = "rolled_back"
+        status["last_transition"] = "external_rollback_detected"
+        status["last_evaluation_decision"] = "ROLLED_BACK"
+        status["last_evaluation_reasons"] = [
+            f"active champion registry version {current_champion} no longer matches promoted canary version {promoted_version}"
+        ]
     metrics = status["metrics"]
     state_codes = {
         "disabled": 0,
@@ -83,6 +96,7 @@ def _canary_status() -> dict[str, Any]:
         "healthy": 3,
         "stopped": 4,
         "promoted": 5,
+        "rolled_back": 6,
     }
     CANARY_ENABLED.set(1 if status["enabled"] else 0)
     CANARY_STATE.set(state_codes.get(str(status["state"]), -1))
@@ -195,11 +209,6 @@ def runtime_model() -> dict[str, Any]:
 @app.get("/canary/status")
 def canary_status() -> dict[str, Any]:
     return _canary_status()
-
-
-@app.get("/canary/evaluate")
-def canary_evaluate() -> dict[str, Any]:
-    return canary.evaluate()
 
 
 @app.get("/decision-contract")
