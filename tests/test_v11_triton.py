@@ -1,6 +1,6 @@
+import src.operations.accelerator_policy as accelerator_policy
+import src.operations.gpu_autoscaling as gpu_autoscaling
 import src.serving.triton_export as triton_export
-from src.operations.accelerator_policy import evaluate_accelerator_policy
-from src.operations.gpu_autoscaling import decide_gpu_scaling
 
 
 ACCELERATOR_POLICY = {
@@ -29,13 +29,13 @@ AUTOSCALING_POLICY = {
 
 
 def test_current_tree_model_is_cpu_only_without_fake_gpu_claim():
-    report = evaluate_accelerator_policy({"model_family": "tree_ensemble"}, ACCELERATOR_POLICY)
+    report = accelerator_policy.evaluate_accelerator_policy({"model_family": "tree_ensemble"}, ACCELERATOR_POLICY)
     assert report["decision"] == "CPU_ONLY"
     assert report["gpu_profile_enabled"] is False
 
 
 def test_neural_model_requires_real_gpu_benchmark():
-    report = evaluate_accelerator_policy({"model_family": "neural_network"}, ACCELERATOR_POLICY)
+    report = accelerator_policy.evaluate_accelerator_policy({"model_family": "neural_network"}, ACCELERATOR_POLICY)
     assert report["decision"] == "GPU_BENCHMARK_REQUIRED"
 
 
@@ -48,7 +48,7 @@ def test_neural_model_can_become_gpu_eligible_with_strong_real_evidence():
         "gpu_p95_to_cpu_p95_ratio": 0.72,
         "sustained_gpu_utilization": 0.68,
     }
-    report = evaluate_accelerator_policy({"model_family": "neural_network"}, ACCELERATOR_POLICY, benchmark)
+    report = accelerator_policy.evaluate_accelerator_policy({"model_family": "neural_network"}, ACCELERATOR_POLICY, benchmark)
     assert report["decision"] == "GPU_ELIGIBLE"
     assert report["gpu_profile_enabled"] is True
 
@@ -62,12 +62,12 @@ def test_gpu_claim_is_rejected_when_evidence_is_not_real_gpu():
         "gpu_p95_to_cpu_p95_ratio": 0.5,
         "sustained_gpu_utilization": 0.7,
     }
-    report = evaluate_accelerator_policy({"model_family": "neural_network"}, ACCELERATOR_POLICY, benchmark)
+    report = accelerator_policy.evaluate_accelerator_policy({"model_family": "neural_network"}, ACCELERATOR_POLICY, benchmark)
     assert report["decision"] == "GPU_REJECTED"
 
 
 def test_gpu_autoscaling_is_disabled_without_gpu_eligibility():
-    report = decide_gpu_scaling(
+    report = gpu_autoscaling.decide_gpu_scaling(
         {"decision": "CPU_ONLY"},
         {"replicas": 2, "gpu_utilization": 0.95, "queue_time_ms_per_request": 20.0, "average_batch_size": 32},
         AUTOSCALING_POLICY,
@@ -77,7 +77,7 @@ def test_gpu_autoscaling_is_disabled_without_gpu_eligibility():
 
 
 def test_gpu_autoscaling_scales_out_on_queue_pressure():
-    report = decide_gpu_scaling(
+    report = gpu_autoscaling.decide_gpu_scaling(
         {"decision": "GPU_ELIGIBLE"},
         {"replicas": 2, "gpu_utilization": 0.72, "queue_time_ms_per_request": 12.0, "average_batch_size": 32},
         AUTOSCALING_POLICY,
@@ -87,7 +87,7 @@ def test_gpu_autoscaling_scales_out_on_queue_pressure():
 
 
 def test_gpu_autoscaling_does_not_scale_in_when_batching_is_weak():
-    report = decide_gpu_scaling(
+    report = gpu_autoscaling.decide_gpu_scaling(
         {"decision": "GPU_ELIGIBLE"},
         {"replicas": 3, "gpu_utilization": 0.15, "queue_time_ms_per_request": 0.2, "average_batch_size": 1.0},
         AUTOSCALING_POLICY,
