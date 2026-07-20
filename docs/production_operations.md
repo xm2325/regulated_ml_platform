@@ -64,10 +64,10 @@ new training output
 The current synthetic evidence produced:
 
 ```text
-data quality       PASS
-max numeric PSI    0.03488773339483244
-max categorical TVD 0.06966666666666665
-continuous decision NO_TRAINING
+data quality         PASS
+max numeric PSI      0.03488773339483244
+max categorical TVD  0.06966666666666665
+continuous decision  NO_TRAINING
 ```
 
 This is intentionally a no-op decision: a continuous-training system should be able to decide *not* to create a redundant model release.
@@ -112,19 +112,24 @@ rather than a mutable tag.
 
 ### Verified CI release identity
 
-The live container job built and tested this exact Docker image identity:
+Every CI run derives the release identity from the **actual Docker image that was built and smoke-tested in that run** and writes it to `environment-promotion-preprod/release_identity.json`.
+
+The image embeds the Git commit, so its digest is expected to change when the source commit changes. For that reason, a digest is not hardcoded in this document; the Actions artifact is the run-specific source of truth.
+
+The verified identity always includes:
 
 ```text
-image digest   sha256:a4df2766d951bce08dddca9f191c0bf47486b0e7b39ba1d282a5f1bd2ed503f8
-release ID     2bf37ed424e112fa5efd
-model release  0.6.0
-policy         targeted-support-policy-v3
-schema         financial_customer_features_v4
+image_digest           sha256:<actual tested image digest>
+git_commit             <tested Git commit>
+model_release_version  0.6.0
+policy_version          targeted-support-policy-v3
+feature_schema_version  financial_customer_features_v4
+release_id              <derived immutable identity>
 ```
 
-`dev → preprod` was `READY` only after all required checks were `PASS`.
+`dev → preprod` is `READY` only after all required checks are `PASS`.
 
-The same release identity was then evaluated for `preprod → prod`. All nine technical checks were `PASS`:
+The **same run-specific release identity** is then evaluated for `preprod → prod`. The production gate requires all nine technical checks:
 
 ```text
 automated tests
@@ -138,7 +143,7 @@ canary evidence
 rollback drill
 ```
 
-but the result remained:
+Even when every technical check is `PASS`, the verified control result with approval still pending is:
 
 ```text
 status          BLOCKED
