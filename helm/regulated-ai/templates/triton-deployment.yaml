@@ -2,6 +2,9 @@
 {{- if and (eq .Values.tritonServing.accelerator "gpu") (not .Values.tritonServing.gpuEvidenceApproved) }}
 {{- fail "tritonServing accelerator=gpu requires gpuEvidenceApproved=true backed by accelerator-policy evidence" }}
 {{- end }}
+{{- if and (eq .Values.tritonServing.accelerator "gpu") (not (has .Values.tritonServing.modelFamily .Values.tritonServing.gpuEligibleModelFamilies)) }}
+{{- fail "tritonServing accelerator=gpu is not allowed for the configured modelFamily without an approved GPU-compatible model contract" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
