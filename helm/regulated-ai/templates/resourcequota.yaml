@@ -1,0 +1,12 @@
+{{- if .Values.resourceQuota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: regulated-ai-compute-budget
+spec:
+  hard:
+    requests.cpu: {{ .Values.resourceQuota.hard.requestsCpu | quote }}
+    requests.memory: {{ .Values.resourceQuota.hard.requestsMemory | quote }}
+    limits.cpu: {{ .Values.resourceQuota.hard.limitsCpu | quote }}
+    limits.memory: {{ .Values.resourceQuota.hard.limitsMemory | quote }}
+{{- end }}
