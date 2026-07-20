@@ -247,10 +247,11 @@ class CanaryController:
     def _assigned_role(self, request: PredictionRequest) -> str:
         with self._lock:
             active = self._enabled and self._challenger is not None and self._state.state in {"warming", "healthy"}
+            challenger_version = self._state.challenger_registry_version or "unversioned"
         if not active or self._traffic_percent <= 0:
             return "champion"
-        key = request.request_id or request.customer_id
-        digest = hashlib.sha256(f"{settings.canary_assignment_seed}:{key}".encode()).hexdigest()
+        cohort_key = f"{settings.canary_assignment_seed}:{challenger_version}:{request.customer_id}"
+        digest = hashlib.sha256(cohort_key.encode()).hexdigest()
         bucket = int(digest[:8], 16) % 10_000
         return "challenger" if bucket < round(self._traffic_percent * 100) else "champion"
 
