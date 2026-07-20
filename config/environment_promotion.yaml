@@ -1,0 +1,29 @@
+version: environment-promotion-v1
+
+controls:
+  require_immutable_image_digest: true
+  require_same_release_identity_between_environments: true
+  production_auto_promotion_allowed: false
+
+transitions:
+  dev->preprod:
+    manual_approval_required: false
+    required_checks:
+      - automated_tests
+      - lint
+      - security_scan
+      - dependency_audit
+      - container_smoke
+      - helm_kind
+  preprod->prod:
+    manual_approval_required: true
+    required_checks:
+      - automated_tests
+      - lint
+      - security_scan
+      - dependency_audit
+      - container_smoke
+      - helm_kind
+      - registry_integration
+      - canary_evidence
+      - rollback_drill
