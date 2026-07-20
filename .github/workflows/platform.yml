@@ -20,7 +20,7 @@ env:
 jobs:
   evidence:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,16 +31,19 @@ jobs:
             requirements-runtime.lock
             requirements-registry-client.lock
             requirements-mlflow.lock
+            requirements-onnx.txt
             requirements.txt
             requirements-dev.txt
-      - name: Install development dependencies
+      - name: Install development and ONNX export dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -r requirements-dev.txt -r requirements-onnx.txt
       - name: Generate dated synthetic data and features
         run: make data features
       - name: Train, calibrate, and evaluate out of time
         run: make train
+      - name: Export and validate ONNX/Triton serving artifacts
+        run: make triton
       - name: Generate monitoring, continuous-ops, alerting, and governance evidence
         run: make reports continuous alerts contract
       - name: Run batch scoring and operational controls
@@ -91,6 +94,8 @@ jobs:
         run: make security
       - name: Runtime dependency audit
         run: make audit
+      - name: ONNX export toolchain dependency audit
+        run: make audit-onnx
       - name: Registry server dependency audit
         run: make audit-registry
       - name: Registry client dependency audit
@@ -104,6 +109,7 @@ jobs:
             models/metadata.json
             models/model_contract.json
             models/candidates/
+            models/triton/
           retention-days: 14
       - name: Upload release evidence
         uses: actions/upload-artifact@v4
@@ -126,8 +132,79 @@ jobs:
           path: site/
           retention-days: 14
 
-  container-and-kind:
+  triton-contract:
     needs: evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: models
+      - name: Build immutable Triton model-repository image
+        run: |
+          set -euo pipefail
+          docker build -f docker/TritonModelRepository.Dockerfile -t regulated-ai-triton-models:${GITHUB_SHA} .
+          docker image inspect regulated-ai-triton-models:${GITHUB_SHA} > triton-model-image-inspect.json
+      - name: Validate CPU Triton Helm deployment contract
+        run: |
+          set -euo pipefail
+          mkdir -p reports/triton_contract
+          helm lint helm/regulated-ai
+          helm template regulated-ai helm/regulated-ai \
+            --set tritonServing.enabled=true \
+            --set tritonServing.accelerator=cpu \
+            --set tritonServing.modelRepositoryImage.repository=regulated-ai-triton-models \
+            --set tritonServing.modelRepositoryImage.tag=${GITHUB_SHA} \
+            > reports/triton_contract/cpu-rendered.yaml
+          grep -q 'name: regulated-ai-triton' reports/triton_contract/cpu-rendered.yaml
+          grep -q -- '--allow-gpu-metrics=false' reports/triton_contract/cpu-rendered.yaml
+          ! grep -q 'nvidia.com/gpu:' reports/triton_contract/cpu-rendered.yaml
+      - name: Prove current tree ensemble cannot be forced onto GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          helm template regulated-ai helm/regulated-ai \
+            --set tritonServing.enabled=true \
+            --set tritonServing.accelerator=gpu \
+            --set tritonServing.gpuEvidenceApproved=true \
+            > reports/triton_contract/current-tree-gpu-render.txt 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -q 'not allowed for the configured modelFamily' reports/triton_contract/current-tree-gpu-render.txt
+      - name: Validate future GPU-compatible deployment contract only
+        run: |
+          set -euo pipefail
+          helm template regulated-ai helm/regulated-ai \
+            --set tritonServing.enabled=true \
+            --set tritonServing.accelerator=gpu \
+            --set tritonServing.gpuEvidenceApproved=true \
+            --set tritonServing.modelFamily=neural_network \
+            > reports/triton_contract/gpu-compatible-rendered.yaml
+          grep -q 'nvidia.com/gpu:' reports/triton_contract/gpu-compatible-rendered.yaml
+          grep -q 'accelerator: nvidia-a100' reports/triton_contract/gpu-compatible-rendered.yaml
+          grep -q -- '--allow-gpu-metrics=true' reports/triton_contract/gpu-compatible-rendered.yaml
+      - name: Preserve Triton contract evidence
+        run: |
+          cp triton-model-image-inspect.json reports/triton_contract/
+          cp models/triton/contract.json reports/triton_contract/
+          cp models/triton/model_repository/support_base/config.pbtxt reports/triton_contract/support_base_config.pbtxt
+          cp models/triton/model_repository/support_calibrator/config.pbtxt reports/triton_contract/support_calibrator_config.pbtxt
+          cp models/triton/model_repository/support_ensemble/config.pbtxt reports/triton_contract/support_ensemble_config.pbtxt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triton-serving-contract-evidence
+          path: reports/triton_contract/
+          retention-days: 14
+
+  container-and-kind:
+    needs: [evidence, triton-contract]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -140,7 +217,7 @@ jobs:
           name: model-artifacts
           path: models
       - name: Inspect downloaded model artifacts
-        run: find models -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+        run: find models -maxdepth 5 -type f -printf '%p %s bytes\n' | sort
       - name: Build image once
         run: docker build --progress=plain --build-arg GIT_COMMIT="${GITHUB_SHA}" -f docker/Dockerfile -t "${IMAGE_NAME}:${IMAGE_TAG}" .
       - name: Live container smoke test
@@ -203,6 +280,7 @@ jobs:
               "lint": "PASS",
               "security_scan": "PASS",
               "dependency_audit": "PASS",
+              "triton_serving_contract": "PASS",
               "container_smoke": "PASS",
               "helm_kind": "PASS",
           }
@@ -267,6 +345,8 @@ jobs:
           test -s reports/promotion_gate.json
           test -s reports/continuous_ops_decision.json
           test -s reports/alerting_validation.json
+          test -s reports/triton_onnx_parity.json
+          test -s reports/accelerator_decision.json
       - name: Exercise registry lifecycle, live API canary, promotion, and rollback
         run: bash scripts/registry_stack_smoke.sh
       - name: Upload registry runtime integration evidence
@@ -278,7 +358,7 @@ jobs:
           retention-days: 14
 
   production-promotion-control:
-    needs: [container-and-kind, registry-integration]
+    needs: [container-and-kind, registry-integration, triton-contract]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -313,6 +393,7 @@ jobs:
               "lint": "PASS",
               "security_scan": "PASS",
               "dependency_audit": "PASS",
+              "triton_serving_contract": "PASS",
               "container_smoke": "PASS",
               "helm_kind": "PASS",
               "registry_integration": "PASS",
