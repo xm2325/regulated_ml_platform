@@ -1,3 +1,8 @@
+{{- $inferenceResources := deepCopy .Values.resources -}}
+{{- if .Values.inferenceScheduling.gpu.enabled -}}
+{{- $_ := set $inferenceResources.requests .Values.inferenceScheduling.gpu.resourceName .Values.inferenceScheduling.gpu.count -}}
+{{- $_ := set $inferenceResources.limits .Values.inferenceScheduling.gpu.resourceName .Values.inferenceScheduling.gpu.count -}}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,6 +25,22 @@ spec:
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       automountServiceAccountToken: false
+      priorityClassName: {{ .Values.inferenceScheduling.priorityClassName | quote }}
+{{- if .Values.inferenceScheduling.gpu.enabled }}
+      nodeSelector:
+{{ toYaml .Values.inferenceScheduling.gpu.nodeSelector | indent 8 }}
+      tolerations:
+{{ toYaml .Values.inferenceScheduling.gpu.tolerations | indent 8 }}
+{{- else }}
+{{- with .Values.inferenceScheduling.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.inferenceScheduling.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -101,7 +122,7 @@ spec:
             httpGet: {path: /health, port: http}
             periodSeconds: 20
           resources:
-{{ toYaml .Values.resources | indent 12 }}
+{{ toYaml $inferenceResources | indent 12 }}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
 {{- if .Values.registryRuntime.enabled }}
