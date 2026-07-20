@@ -108,14 +108,14 @@ services:
       MLFLOW_REGISTRY_URI: http://mlflow:5000
       MLFLOW_REGISTERED_MODEL_NAME: regulated-targeted-support-model
       MLFLOW_CHAMPION_ALIAS: champion
-      REGISTRY_CACHE_DIR: /tmp/regulated-ai-registry-cache
+      REGISTRY_CACHE_DIR: /var/lib/regulated-ai/registry-cache
       REGISTRY_STRICT_STARTUP: "true"
       REGISTRY_HOT_RELOAD_ENABLED: "true"
       REGISTRY_RELOAD_INTERVAL_SECONDS: "2"
     ports:
       - "8002:8000"
     volumes:
-      - registry-api-cache:/tmp/regulated-ai-registry-cache
+      - registry-api-cache:/var/lib/regulated-ai/registry-cache
     restart: unless-stopped
 
 volumes:
