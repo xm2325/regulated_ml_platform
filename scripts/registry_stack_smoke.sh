@@ -145,6 +145,7 @@ for _ in {1..60}; do
   fi
   sleep 2
 done
+curl --fail --silent http://127.0.0.1:8002/canary/status > "$OUT_DIR/canary_status_after_rollback.json"
 container_id_after=$(docker compose -f "$COMPOSE_FILE" --profile runtime ps -q api-registry-runtime)
 printf '%s\n' "$container_id_after" > "$OUT_DIR/api_container_id_after.txt"
 run_registry status --output "$OUT_DIR/status_final.json"
@@ -167,6 +168,7 @@ prediction = json.loads((root / "api_prediction_after_canary_promote.json").read
 runtime = json.loads((root / "api_runtime_after_canary_promote.json").read_text())
 register_b = json.loads((root / "register_b.json").read_text())
 after_rollback = json.loads((root / "api_version_after_rollback.json").read_text())
+canary_after_rollback = json.loads((root / "canary_status_after_rollback.json").read_text())
 status = json.loads((root / "status_final.json").read_text())
 container_before = (root / "api_container_id_before.txt").read_text().strip()
 container_after = (root / "api_container_id_after.txt").read_text().strip()
@@ -192,6 +194,8 @@ assert prediction["model_source"] == "registry"
 assert prediction["registry_model_version"] == after_promote["registry_model_version"]
 assert runtime["reload_successes"] >= 2
 assert after_rollback["registry_model_version"] == initial["registry_model_version"]
+assert canary_after_rollback["state"] == "rolled_back"
+assert canary_after_rollback["last_transition"] == "external_rollback_detected"
 assert status["aliases"]["champion"]["version"] == initial["registry_model_version"]
 assert container_before and container_before == container_after
 for name in ["model.joblib", "metadata.json", "model_metrics.json", "promotion_gate.json", "registry_provenance.json"]:
@@ -202,9 +206,14 @@ print(json.dumps({
     "initial_champion_registry_version": initial["registry_model_version"],
     "canary_challenger_registry_version": str(register_b["model_version"]),
     "challenger_served_requests": after_canary["metrics"]["challenger_served"],
+    "champion_served_requests": after_canary["metrics"]["champion_served"],
     "action_disagreement_rate": after_canary["metrics"]["action_disagreement_rate"],
+    "probability_delta_p95": after_canary["metrics"]["probability_delta_p95"],
+    "challenger_error_rate": after_canary["metrics"]["challenger_error_rate"],
+    "latency_ratio": after_canary["metrics"]["latency_ratio"],
     "automatic_promotion": after_canary["last_transition"],
     "rolled_back_registry_version": after_rollback["registry_model_version"],
+    "canary_state_after_rollback": canary_after_rollback["state"],
     "same_api_container": container_before == container_after,
     "reload_successes": runtime["reload_successes"],
 }, indent=2))
