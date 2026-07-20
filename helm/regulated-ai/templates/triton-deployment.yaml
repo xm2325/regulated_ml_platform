@@ -1,0 +1,110 @@
+{{- if .Values.tritonServing.enabled }}
+{{- if and (eq .Values.tritonServing.accelerator "gpu") (not .Values.tritonServing.gpuEvidenceApproved) }}
+{{- fail "tritonServing accelerator=gpu requires gpuEvidenceApproved=true backed by accelerator-policy evidence" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+spec:
+  replicas: {{ .Values.tritonServing.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: regulated-ai-triton
+  template:
+    metadata:
+      labels:
+        app: regulated-ai-triton
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.tritonServing.service.metricsPort | quote }}
+    spec:
+      priorityClassName: {{ .Values.tritonServing.priorityClassName | quote }}
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+      nodeSelector:
+{{ toYaml .Values.tritonServing.gpu.nodeSelector | indent 8 }}
+      tolerations:
+{{ toYaml .Values.tritonServing.gpu.tolerations | indent 8 }}
+{{- end }}
+      initContainers:
+        - name: model-repository
+          image: "{{ .Values.tritonServing.modelRepositoryImage.repository }}{{- if .Values.tritonServing.modelRepositoryImage.digest }}@{{ .Values.tritonServing.modelRepositoryImage.digest }}{{- else }}:{{ .Values.tritonServing.modelRepositoryImage.tag }}{{- end }}"
+          imagePullPolicy: {{ .Values.tritonServing.modelRepositoryImage.pullPolicy }}
+          command: ["sh", "-c", "cp -R /model-repository/. /models/"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - name: model-repository
+              mountPath: /models
+      containers:
+        - name: triton
+          image: "{{ .Values.tritonServing.serverImage.repository }}:{{ .Values.tritonServing.serverImage.tag }}"
+          imagePullPolicy: {{ .Values.tritonServing.serverImage.pullPolicy }}
+          args:
+            - tritonserver
+            - --model-repository=/models
+            - --strict-model-config=true
+            - --allow-metrics=true
+            - --allow-cpu-metrics=true
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+            - --allow-gpu-metrics=true
+{{- else }}
+            - --allow-gpu-metrics=false
+{{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.tritonServing.service.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.tritonServing.service.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.tritonServing.service.metricsPort }}
+          startupProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+            failureThreshold: 60
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v2/health/live
+              port: http
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+          resources:
+            requests:
+              cpu: {{ index .Values.tritonServing.resources.requests "cpu" | quote }}
+              memory: {{ index .Values.tritonServing.resources.requests "memory" | quote }}
+              {{ .Values.tritonServing.gpu.resourceName }}: {{ .Values.tritonServing.gpu.count | quote }}
+            limits:
+              cpu: {{ index .Values.tritonServing.resources.limits "cpu" | quote }}
+              memory: {{ index .Values.tritonServing.resources.limits "memory" | quote }}
+              {{ .Values.tritonServing.gpu.resourceName }}: {{ .Values.tritonServing.gpu.count | quote }}
+{{- else }}
+          resources:
+{{ toYaml .Values.tritonServing.resources | indent 12 }}
+{{- end }}
+          volumeMounts:
+            - name: model-repository
+              mountPath: /models
+              readOnly: true
+      volumes:
+        - name: model-repository
+          emptyDir: {}
+{{- end }}
