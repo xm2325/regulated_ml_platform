@@ -141,7 +141,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: model-artifacts
           path: models
@@ -212,7 +212,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: model-artifacts
           path: models
@@ -329,11 +329,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: model-artifacts
           path: models
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-evidence
           path: .
@@ -371,11 +371,11 @@ jobs:
           python-version: "3.11"
       - name: Install runtime configuration dependency
         run: pip install PyYAML==6.0.3
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: model-artifacts
           path: models
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: environment-promotion-preprod
           path: promotion-preprod
