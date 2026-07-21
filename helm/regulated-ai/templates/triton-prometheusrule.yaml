@@ -1,0 +1,55 @@
+{{- if and .Values.tritonServing.enabled .Values.tritonServing.productionControls.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+{{- with .Values.tritonServing.productionControls.prometheusRule.additionalLabels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  groups:
+    - name: regulated-ai-triton.availability
+      rules:
+        - alert: RegulatedAITritonNoReadyReplicas
+          expr: kube_deployment_status_replicas_available{deployment="regulated-ai-triton",namespace="{{ .Release.Namespace }}"} < 1
+          for: {{ .Values.tritonServing.productionControls.prometheusRule.readiness.for | quote }}
+          labels:
+            severity: critical
+            service: regulated-ai-triton
+          annotations:
+            summary: Triton has no ready replicas
+            runbook: docs/runbooks/ml_platform_incidents.md#triton-serving
+        - alert: RegulatedAITritonQueueTimeHigh
+          expr: (sum(rate(nv_inference_queue_duration_us{service="regulated-ai-triton"}[5m])) / clamp_min(sum(rate(nv_inference_request_success{service="regulated-ai-triton"}[5m])), 1) / 1000) > {{ .Values.tritonServing.productionControls.prometheusRule.queueTime.thresholdMs }}
+          for: {{ .Values.tritonServing.productionControls.prometheusRule.queueTime.for | quote }}
+          labels:
+            severity: warning
+            service: regulated-ai-triton
+          annotations:
+            summary: Triton queue time exceeds the governed threshold
+            runbook: docs/runbooks/ml_platform_incidents.md#triton-serving
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+    - name: regulated-ai-triton.gpu
+      rules:
+        - alert: RegulatedAITritonGpuSaturated
+          expr: avg(nv_gpu_utilization{service="regulated-ai-triton"}) > {{ .Values.tritonServing.productionControls.prometheusRule.gpuUtilization.upperBound }}
+          for: {{ .Values.tritonServing.productionControls.prometheusRule.gpuUtilization.for | quote }}
+          labels:
+            severity: warning
+            service: regulated-ai-triton
+          annotations:
+            summary: Sustained Triton GPU utilization is above the approved operating band
+            runbook: docs/runbooks/ml_platform_incidents.md#triton-serving
+        - alert: RegulatedAITritonGpuUnderutilized
+          expr: avg(nv_gpu_utilization{service="regulated-ai-triton"}) < {{ .Values.tritonServing.productionControls.prometheusRule.gpuUtilization.lowerBound }}
+          for: {{ .Values.tritonServing.productionControls.prometheusRule.gpuUtilization.for | quote }}
+          labels:
+            severity: info
+            service: regulated-ai-triton
+          annotations:
+            summary: Triton GPU utilization is below the evidence-policy floor
+            runbook: docs/runbooks/ml_platform_incidents.md#triton-serving
+{{- end }}
+{{- end }}

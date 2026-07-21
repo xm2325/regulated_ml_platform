@@ -6,13 +6,13 @@
 [![CodeQL](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml)
 [![Pages](https://img.shields.io/badge/evidence-dashboard-blue)](https://xm2325.github.io/regulated_ml_platform/)
 
-**A production-style regulated ML reference platform with chronological evaluation, calibration, MLflow registry lifecycle, canary release, monitoring, immutable promotion, rollback, real Triton CPU inference, runtime dynamic-batching evidence, and bounded capacity planning.**
+**A production-style regulated ML reference platform with chronological evaluation, calibration, MLflow registry lifecycle, canary release, monitoring, immutable promotion, rollback, real Triton CPU inference, runtime dynamic-batching evidence, bounded capacity planning, and a fail-closed CSC Roihu GH200 qualification path.**
 
-[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [v1.2 capacity evidence](docs/triton_capacity_evidence.md) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
+[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [v1.3 Roihu GPU runbook](docs/roihu_gpu_evidence.md) · [v1.2 capacity evidence](docs/triton_capacity_evidence.md) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
 
 ## Result first
 
-Platform/service version: `1.2.0`. Validated calibrated model release: `0.6.0`.
+Platform/service version: `1.3.0`. Validated calibrated model release: `0.6.0`.
 
 ```text
 chronological model development
@@ -55,6 +55,31 @@ CPU_ONLY                    real GPU evidence required
 | Policy recall | 0.7098 |
 | High-confidence precision | 0.8828 |
 | Frozen policy threshold | 0.70 |
+
+## v1.3: governed GH200 accelerator qualification
+
+v1.3 adds a cloud-first, two-stage execution path for a deterministic synthetic neural candidate on CSC Roihu. It does not relabel the current calibrated tree champion: that model remains `CPU_ONLY`.
+
+```text
+clean, committed source
+→ deterministic archive + full Git SHA + SHA-256
+→ Roihu gputest: Grace CPU / GH200 CUDA FP32 and BF16 smoke
+→ target-side ONNX export
+→ gpumedium: ARM64 Apptainer --nv
+→ TensorRT FP32 plan built on GH200
+→ loopback Triton server + same-input HTTP benchmark/parity
+→ Slurm COMPLETED/0:0 finalizer
+→ raw artifact SHA-256 + fail-closed policy
+→ GPU_ELIGIBLE or GPU_REJECTED
+```
+
+The formal gate requires at least 300 seconds and 1,000 samples for both CPU and GPU paths, at least 1,000 parity rows, zero policy-decision mismatches, bounded HTTP errors, measurable speedup, latency, sustained utilization and memory headroom, plus the exact source/model/SIF bytes. `gputest` and the shorter TensorRT/Triton path are deliberately `SMOKE_ONLY` and cannot issue eligibility.
+
+GitHub Actions remains the cloud contract runner: it validates the Python/shell/Helm code, rejection paths and immutable source bundle, while explicitly recording that an `ubuntu-latest` runner does not prove a GPU. Real accelerator evidence can originate only from the governed Roihu Slurm path.
+
+The Kubernetes contract is separate from Roihu. GPU Deployments require `GPU_ELIGIBLE`, `real_gpu`, a 64-character evidence digest, a verified cluster profile, and exact accelerator-product/node-selector binding. GH200 evidence cannot authorize an A100 selector. Optional PDB, NetworkPolicy, GPU ResourceQuota, ServiceMonitor, PrometheusRule and bounded KEDA controls remain disabled by default.
+
+See [`docs/roihu_gpu_evidence.md`](docs/roihu_gpu_evidence.md) for the execution and interview-practice runbook.
 
 ## v1.2: runtime batching and capacity evidence
 
@@ -345,6 +370,13 @@ Run the v1.2 concurrency, Perf Analyzer, and capacity evidence path:
 make triton-capacity
 ```
 
+Validate the v1.3 Roihu contracts and build the exact committed source bundle (GPU execution remains a Slurm operation):
+
+```bash
+make roihu-contract
+make roihu-source-bundle ROIHU_BUNDLE_DIR=/tmp/regulated-ml-roihu-source
+```
+
 Run the MLflow registry/API lifecycle:
 
 ```bash
@@ -375,6 +407,10 @@ SLO/headroom capacity policy
 bounded reference replica decision
 accelerator eligibility gate
 current tree-model GPU fail-closed control
+Roihu immutable source-bundle contract
+GH200 evidence schema rejection paths
+GPU evidence-to-node-selector binding
+bounded KEDA/Prometheus/NetworkPolicy/PDB/ResourceQuota templates
 ```
 
 Not claimed without separate runtime evidence:
@@ -382,14 +418,14 @@ Not claimed without separate runtime evidence:
 ```text
 real bank customer data
 production capacity guarantee
-current RandomForest acceleration on A100
-CUDA/TensorRT performance
-real GPU throughput improvement
+current RandomForest acceleration on any GPU
+GPU_ELIGIBLE before the formal gpumedium decision passes
+production CUDA/TensorRT capacity
 live GPU autoscaling
 live service-mesh operation
 fully autonomous production promotion
 ```
 
-`.github/workflows/triton-gpu-evidence.yml` is manual and requires a real self-hosted GPU runner. Its existence is not GPU evidence by itself.
+`.github/workflows/triton-gpu-evidence.yml` runs contract tests on a GitHub-hosted CPU runner. It explicitly does not execute or prove a real GPU workload; real runtime claims require the separate Roihu Slurm evidence described above.
 
 The dataset, target, and customer actions are synthetic. This repository demonstrates ML engineering and production-control patterns and must not be used for real financial decisions.

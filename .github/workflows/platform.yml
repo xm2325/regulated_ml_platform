@@ -178,7 +178,7 @@ jobs:
           set -e
           test "$status" -ne 0
           grep -q 'not allowed for the configured modelFamily' reports/triton_contract/current-tree-gpu-render.txt
-      - name: Validate future GPU-compatible deployment contract only
+      - name: Render governed A100 deployment contract with non-runtime fixture evidence
         run: |
           set -euo pipefail
           helm template regulated-ai helm/regulated-ai \
@@ -186,10 +186,19 @@ jobs:
             --set tritonServing.accelerator=gpu \
             --set tritonServing.gpuEvidenceApproved=true \
             --set tritonServing.modelFamily=neural_network \
-            > reports/triton_contract/gpu-compatible-rendered.yaml
-          grep -q 'nvidia.com/gpu:' reports/triton_contract/gpu-compatible-rendered.yaml
-          grep -q 'accelerator: nvidia-a100' reports/triton_contract/gpu-compatible-rendered.yaml
-          grep -q -- '--allow-gpu-metrics=true' reports/triton_contract/gpu-compatible-rendered.yaml
+            --set tritonServing.gpu.nodeSelector.accelerator=nvidia-a100 \
+            --set tritonServing.gpuProductionEvidence.acceleratorDecision=GPU_ELIGIBLE \
+            --set tritonServing.gpuProductionEvidence.runtimeEvidence=real_gpu \
+            --set-string tritonServing.gpuProductionEvidence.reportSha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set tritonServing.gpuProductionEvidence.clusterProfile=ci-contract-fixture-a100 \
+            --set tritonServing.gpuProductionEvidence.acceleratorProduct=nvidia-a100 \
+            > reports/triton_contract/gpu-contract-fixture-rendered.yaml
+          grep -q 'nvidia.com/gpu:' reports/triton_contract/gpu-contract-fixture-rendered.yaml
+          grep -q 'accelerator: nvidia-a100' reports/triton_contract/gpu-contract-fixture-rendered.yaml
+          grep -q 'regulated-ai/cluster-profile: "ci-contract-fixture-a100"' reports/triton_contract/gpu-contract-fixture-rendered.yaml
+          grep -q -- '--allow-gpu-metrics=true' reports/triton_contract/gpu-contract-fixture-rendered.yaml
+          printf '%s\n' 'CI fixture only: this render does not prove an A100 or other GPU runtime.' \
+            > reports/triton_contract/gpu-contract-fixture-boundary.txt
       - name: Preserve Triton contract evidence
         run: |
           cp triton-model-image-inspect.json reports/triton_contract/

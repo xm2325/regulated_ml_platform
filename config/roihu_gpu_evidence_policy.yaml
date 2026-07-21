@@ -1,0 +1,63 @@
+schema_version: regulated-ml-platform.roihu-gpu-policy/v1
+required_evidence_schema_version: regulated-ml-platform.roihu-gpu-evidence/v1
+
+slurm:
+  expected_cluster: roihu
+  allowed_partitions:
+    - gpumedium
+    - gpularge
+  smoke_only_partitions:
+    - gputest
+
+qualification:
+  required_kind: neural_accelerator_qualification
+  required_profile: candidate_gpu_profile
+  allowed_model_families:
+    - neural_network
+    - transformer
+    - convolutional_neural_network
+  accelerator_product: nvidia-gh200
+
+hardware:
+  required_product_tokens:
+    - NVIDIA
+    - GH200
+  required_compute_capability: "9.0"
+  required_cpu_architecture: aarch64
+  minimum_gpu_count: 1
+  # A full Roihu GH200 exposes 96 GiB; this rejects 12 GiB interactive slices.
+  minimum_gpu_memory_total_mib: 90000
+
+software:
+  minimum_cuda_version: "12.0"
+  minimum_tensorrt_version: "10.0"
+  # tritonserver --version is 2.x; the container tag uses a separate YY.MM release.
+  minimum_triton_server_version: "2.42.0"
+  minimum_triton_container_release: "24.01"
+
+benchmark:
+  minimum_duration_seconds: 300
+  minimum_cpu_samples: 1000
+  minimum_gpu_samples: 1000
+  minimum_parity_samples: 1000
+  maximum_absolute_probability_error: 0.00005
+  maximum_policy_decision_mismatches: 0
+  maximum_http_error_rate: 0.001
+  minimum_throughput_speedup_ratio: 1.50
+  maximum_gpu_p95_to_cpu_p95_ratio: 1.10
+  minimum_sustained_gpu_utilization_fraction: 0.35
+  maximum_sustained_gpu_utilization_fraction: 0.90
+  minimum_gpu_memory_headroom_fraction: 0.10
+
+artifacts:
+  required_artifacts:
+    - source_archive
+    - model
+    - sif_image
+  required_raw_artifacts:
+    - slurm_job
+    - nvidia_smi
+    - software_versions
+    - cpu_benchmark
+    - gpu_benchmark
+    - parity

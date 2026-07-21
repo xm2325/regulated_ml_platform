@@ -1,0 +1,54 @@
+{{- if and .Values.tritonServing.enabled .Values.tritonServing.productionControls.gpuResourceQuota.enabled }}
+{{- $evidence := .Values.tritonServing.gpuProductionEvidence }}
+{{- if ne .Values.tritonServing.accelerator "gpu" }}
+{{- fail "Triton GPU ResourceQuota requires tritonServing.accelerator=gpu" }}
+{{- end }}
+{{- if not .Values.tritonServing.gpuEvidenceApproved }}
+{{- fail "Triton GPU ResourceQuota requires gpuEvidenceApproved=true" }}
+{{- end }}
+{{- if ne .Values.tritonServing.gpu.resourceName "nvidia.com/gpu" }}
+{{- fail "Triton GH200 production controls require gpu.resourceName=nvidia.com/gpu" }}
+{{- end }}
+{{- if ne $evidence.acceleratorDecision "GPU_ELIGIBLE" }}
+{{- fail "Triton GPU production controls require acceleratorDecision=GPU_ELIGIBLE" }}
+{{- end }}
+{{- if ne $evidence.runtimeEvidence "real_gpu" }}
+{{- fail "Triton GPU production controls require runtimeEvidence=real_gpu" }}
+{{- end }}
+{{- $scheduledAccelerator := default "" (index .Values.tritonServing.gpu.nodeSelector "accelerator") }}
+{{- if or (eq $evidence.acceleratorProduct "") (eq $evidence.acceleratorProduct "unverified") }}
+{{- fail "Triton GPU production controls require a verified acceleratorProduct" }}
+{{- end }}
+{{- if ne $evidence.acceleratorProduct $scheduledAccelerator }}
+{{- fail "Triton GPU production controls require acceleratorProduct to match tritonServing.gpu.nodeSelector.accelerator" }}
+{{- end }}
+{{- if not (regexMatch "^[a-fA-F0-9]{64}$" $evidence.reportSha256) }}
+{{- fail "Triton GPU production controls require a 64-character evidence reportSha256" }}
+{{- end }}
+{{- if or (eq $evidence.clusterProfile "") (eq $evidence.clusterProfile "unverified") }}
+{{- fail "Triton GPU production controls require a verified clusterProfile" }}
+{{- end }}
+{{- $gpuPerReplica := int .Values.tritonServing.gpu.count }}
+{{- $capacityReplicas := int .Values.tritonServing.replicas }}
+{{- if .Values.tritonServing.kedaAutoscaling.enabled }}
+{{- $capacityReplicas = int .Values.tritonServing.kedaAutoscaling.maxReplicaCount }}
+{{- end }}
+{{- $requiredGpuCount := mul $gpuPerReplica $capacityReplicas }}
+{{- $hardGpuCount := int .Values.tritonServing.productionControls.gpuResourceQuota.hardGpuCount }}
+{{- if lt $hardGpuCount $requiredGpuCount }}
+{{- fail (printf "Triton GPU ResourceQuota hardGpuCount=%d is lower than required autoscaling capacity=%d" $hardGpuCount $requiredGpuCount) }}
+{{- end }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: regulated-ai-triton-gpu-budget
+  labels:
+    app: regulated-ai-triton
+  annotations:
+    regulated-ai/gpu-evidence-sha256: {{ $evidence.reportSha256 | quote }}
+    regulated-ai/cluster-profile: {{ $evidence.clusterProfile | quote }}
+    regulated-ai/accelerator-product: {{ $evidence.acceleratorProduct | quote }}
+spec:
+  hard:
+    requests.{{ .Values.tritonServing.gpu.resourceName }}: {{ $hardGpuCount | quote }}
+{{- end }}

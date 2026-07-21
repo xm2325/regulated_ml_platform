@@ -1,0 +1,50 @@
+{{- if and .Values.tritonServing.enabled .Values.tritonServing.productionControls.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+spec:
+  podSelector:
+    matchLabels:
+      app: regulated-ai-triton
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+{{- if .Values.tritonServing.productionControls.networkPolicy.applicationIngress.enabled }}
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.tritonServing.service.httpPort }}
+        - protocol: TCP
+          port: {{ .Values.tritonServing.service.grpcPort }}
+{{- end }}
+{{- if .Values.tritonServing.productionControls.networkPolicy.monitoringIngress.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.tritonServing.productionControls.networkPolicy.monitoringIngress.namespace | quote }}
+          podSelector:
+            matchLabels:
+{{ toYaml .Values.tritonServing.productionControls.networkPolicy.monitoringIngress.podLabels | indent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.tritonServing.service.metricsPort }}
+{{- end }}
+  egress:
+{{- if .Values.tritonServing.productionControls.networkPolicy.dnsEgress.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.tritonServing.productionControls.networkPolicy.dnsEgress.namespace | quote }}
+          podSelector:
+            matchLabels:
+{{ toYaml .Values.tritonServing.productionControls.networkPolicy.dnsEgress.podLabels | indent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+{{- end }}
+{{- end }}
