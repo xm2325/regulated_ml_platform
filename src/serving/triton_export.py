@@ -206,6 +206,11 @@ def export_triton_repository(
     ensemble_dir = repository / "support_ensemble"
     for directory in [base_dir / "1", calibrator_dir / "1", ensemble_dir / "1"]:
         directory.mkdir(parents=True, exist_ok=True)
+    ensemble_version_marker = ensemble_dir / "1" / "version.txt"
+    ensemble_version_marker.write_text(
+        "Triton ensemble version 1; scheduling is defined in ../config.pbtxt\n",
+        encoding="utf-8",
+    )
 
     base_model = convert_sklearn(
         estimator,
@@ -262,6 +267,7 @@ def export_triton_repository(
         "artifacts": {
             "support_base_onnx_sha256": _sha256(base_path),
             "support_calibrator_onnx_sha256": _sha256(calibrator_path),
+            "support_ensemble_version_marker_sha256": _sha256(ensemble_version_marker),
             "preprocessor_sha256": _sha256(preprocessor_path),
         },
     }
