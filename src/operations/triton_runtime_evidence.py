@@ -2,28 +2,28 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
-from typing import Any
+import pathlib
+import typing
 
 EXPECTED_BATCH_SIZES = {8, 32, 64}
 
 
-def _as_int(value: Any) -> int:
+def _as_int(value: typing.Any) -> int:
     return int(value)
 
 
-def _preferred_batches(config: dict[str, Any]) -> set[int]:
+def _preferred_batches(config: dict[str, typing.Any]) -> set[int]:
     dynamic = config.get("dynamic_batching") or {}
     values = dynamic.get("preferred_batch_size") or []
     return {_as_int(value) for value in values}
 
 
 def validate_runtime_evidence(
-    base_config: dict[str, Any],
-    calibrator_config: dict[str, Any],
-    benchmark: dict[str, Any],
+    base_config: dict[str, typing.Any],
+    calibrator_config: dict[str, typing.Any],
+    benchmark: dict[str, typing.Any],
     metrics_text: str,
-) -> dict[str, Any]:
+) -> dict[str, typing.Any]:
     checks: dict[str, bool] = {
         "triton_http_benchmark_pass": benchmark.get("status") == "PASS",
         "real_triton_runtime": benchmark.get("runtime_evidence") == "real_triton_server",
@@ -67,12 +67,12 @@ def main() -> None:
     args = parser.parse_args()
 
     report = validate_runtime_evidence(
-        json.loads(Path(args.base_config).read_text(encoding="utf-8")),
-        json.loads(Path(args.calibrator_config).read_text(encoding="utf-8")),
-        json.loads(Path(args.benchmark).read_text(encoding="utf-8")),
-        Path(args.metrics).read_text(encoding="utf-8"),
+        json.loads(pathlib.Path(args.base_config).read_text(encoding="utf-8")),
+        json.loads(pathlib.Path(args.calibrator_config).read_text(encoding="utf-8")),
+        json.loads(pathlib.Path(args.benchmark).read_text(encoding="utf-8")),
+        pathlib.Path(args.metrics).read_text(encoding="utf-8"),
     )
-    output = Path(args.output)
+    output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
