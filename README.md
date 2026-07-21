@@ -2,16 +2,17 @@
 
 [![Platform](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml)
 [![Triton CPU runtime](https://github.com/xm2325/regulated_ml_platform/actions/workflows/triton-cpu-runtime.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/triton-cpu-runtime.yml)
+[![Triton capacity](https://github.com/xm2325/regulated_ml_platform/actions/workflows/triton-capacity.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/triton-capacity.yml)
 [![CodeQL](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml)
 [![Pages](https://img.shields.io/badge/evidence-dashboard-blue)](https://xm2325.github.io/regulated_ml_platform/)
 
-**A production-style regulated ML reference platform covering chronological evaluation, calibrated model serving, MLflow registry lifecycle, controlled canary release, monitoring, immutable promotion, rollback, and a verified ONNX/Triton CPU inference path.**
+**A production-style regulated ML reference platform with chronological evaluation, calibration, MLflow registry lifecycle, canary release, monitoring, immutable promotion, rollback, real Triton CPU inference, runtime dynamic-batching evidence, and bounded capacity planning.**
 
-[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Canary runtime](docs/canary_runtime.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
+[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [v1.2 capacity evidence](docs/triton_capacity_evidence.md) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
 
 ## Result first
 
-Platform/service version: `1.1.0`. Validated calibrated model release: `0.6.0`.
+Platform/service version: `1.2.0`. Validated calibrated model release: `0.6.0`.
 
 ```text
 chronological model development
@@ -22,13 +23,19 @@ MLflow registry / champion / challenger / rollback
         ↓
 stable canary + online safety gate
         ↓
-verified serving export
+versioned ONNX/Triton serving package
         ↓
-base estimator ONNX + Platt calibrator ONNX
+real Triton 25.06 CPU server
         ↓
-real Triton support_ensemble on CPU
+HTTP probability parity
         ↓
-runtime HTTP parity + batching + metrics evidence
+concurrent synchronized requests
+        ↓
+actual scheduler batching from Prometheus counters
+        ↓
+NVIDIA Triton Perf Analyzer
+        ↓
+SLO + safety-headroom capacity reference
         ↓
 accelerator policy
    ┌────┴─────────────────────┐
@@ -49,50 +56,117 @@ CPU_ONLY                    real GPU evidence required
 | High-confidence precision | 0.8828 |
 | Frozen policy threshold | 0.70 |
 
-### v1.1 evidence
+## v1.2: runtime batching and capacity evidence
 
-| Evidence | Result |
-|---|---:|
-| Triton repository validation | PASS |
-| Native ↔ local ONNX parity sample | 256 |
-| Local ONNX policy-decision mismatches | 0 |
-| Real Triton 25.06 CPU server | PASS |
-| `support_base` / `support_calibrator` / `support_ensemble` | READY |
-| Real HTTP batches | 1, 8, 32, 64, 128 |
-| Real HTTP probability parity | PASS for all batches |
-| Largest observed Triton probability error | `3.57e-7` |
-| Runtime-loaded dynamic batching contract | PASS |
-| Triton `nv_inference_*` metrics | PRESENT |
-| Current accelerator decision | `CPU_ONLY` |
-| Current tree-model forced-GPU rejection | PASS |
-| Docker + kind + Helm path | PASS |
-| MLflow registry/canary/promotion/rollback | PASS |
-| Production approval-pending block | PASS |
-| CodeQL | PASS |
+v1.1 proved that the calibrated model could run on a real Triton server. v1.2 tests what happens when requests overlap.
 
-## Real Triton CPU runtime evidence
+```text
+custom concurrent HTTP benchmark
+→ native ↔ Triton probability parity
+→ HTTP correctness
+→ inference_count / execution_count deltas
+→ observed average backend batch size
 
-A GitHub-hosted CI run starts the official NVIDIA Triton Inference Server `25.06` image with GPU metrics disabled, loads the generated model repository, and sends real V2 HTTP inference requests.
+NVIDIA Triton Perf Analyzer
+→ optimized Triton client path
+→ concurrency / latency / throughput sweep
+→ server capacity source
 
-Reference hosted-CI run:
+capacity policy
+→ SLO filter
+→ safety headroom
+→ bounded reference replica decision
+```
 
-| Batch | Triton p50 | Triton p95 | Rows/s at p50 | Max abs probability error |
+The two clients intentionally have different roles. The Python/httpx benchmark is a **semantic and batching gate**. It is not used as the Triton server-capacity source because Python scheduling, JSON serialization, and the client HTTP stack add measurable overhead. Server capacity comes from NVIDIA Triton Perf Analyzer.
+
+### Passing v1.2 reference evidence
+
+A successful hosted-CI run observed real dynamic batching while preserving model semantics:
+
+| Concurrency | Custom HTTP p95 | Custom rows/s | Avg `support_base` batch | Probability parity |
 |---:|---:|---:|---:|---:|
-| 1 | 2.03 ms | 2.78 ms | 493 | `3.82e-8` |
-| 8 | 1.18 ms | 1.26 ms | 6,790 | `2.77e-7` |
-| 32 | 2.08 ms | 2.16 ms | 15,371 | `3.57e-7` |
-| 64 | 2.43 ms | 3.80 ms | 26,376 | `1.36e-7` |
-| 128 | 4.00 ms | 4.07 ms | 32,000 | `1.76e-7` |
+| 1 | 2.08 ms | 485 | 1.00 | PASS |
+| 4 | 4.03 ms | 913 | 2.82 | PASS |
+| 8 | 7.07 ms | 981 | 1.92 | PASS |
+| 16 | 39.59 ms | 867 | 1.76 | PASS |
+| 32 | 27.00 ms | 1,042 | 1.70 | PASS |
 
-These are small hosted-runner reference measurements, not production capacity numbers. The important release evidence is that every tested batch preserved probability semantics within tolerance and the actual server loaded the intended batching configuration.
+All requests completed without HTTP failures; the largest observed absolute probability error was about `5.41e-7`.
 
-See [`docs/triton_runtime_evidence.md`](docs/triton_runtime_evidence.md) for the full evidence and failure analysis.
+The same live server was then measured with Triton Perf Analyzer:
 
-## Serving representation preserves calibration
+| Concurrency | Inferences/s | p95 | p99 |
+|---:|---:|---:|---:|
+| 1 | 807 | 1.279 ms | 1.317 ms |
+| 4 | 2,801 | 1.545 ms | 1.637 ms |
+| 7 | 4,634 | 1.721 ms | 1.836 ms |
+| 10 | 7,554 | 1.796 ms | 2.070 ms |
+| 13 | 8,846 | 1.995 ms | 2.566 ms |
+| 16 | 9,425 | 2.391 ms | 3.296 ms |
 
-The active artifact is a `RandomForestClassifier` wrapped by Platt calibration. Exporting only the underlying estimator would change the probabilities used by the frozen policy threshold.
+These are short shared-runner reference measurements, not production capacity promises.
 
-v1.1 therefore builds:
+### What proves batching actually happened
+
+The generated Triton configs still declare:
+
+```text
+max batch size          128
+preferred batch sizes   8, 32, 64
+base queue delay        500 microseconds
+calibrator queue delay  250 microseconds
+```
+
+v1.2 no longer stops at configuration validation. For each concurrency scenario it reads Prometheus counters before and after the workload:
+
+```text
+observed average batch size
+= delta(nv_inference_count)
+  / delta(nv_inference_exec_count)
+```
+
+For example, one passing run processed 48 single-row requests at concurrency 4 in 17 base-model backend executions, producing an observed average batch size of about `2.82`.
+
+## Capacity decision contract
+
+`config/triton_capacity_policy.yaml` separates measurement from policy.
+
+The custom concurrent HTTP path must pass:
+
+```text
+HTTP correctness
++ probability parity
++ observed runtime batching
+```
+
+Perf Analyzer points are then checked against server latency objectives. The highest-throughput SLO-passing point becomes the measured server reference capacity.
+
+```text
+safe reference capacity per replica
+= measured Perf Analyzer capacity
+  × configured safety headroom
+
+reference replicas
+= ceil(reference target
+       / safe reference capacity per replica)
+```
+
+The decision fails closed when semantic correctness fails, batching is ineffective, Perf Analyzer evidence is missing, too few server points pass the SLO, or the result exceeds the configured replica boundary.
+
+The generated `capacity_report.html` keeps three separate evidence views:
+
+```text
+p95 latency vs concurrency
+throughput vs concurrency
+observed backend batch size vs concurrency
+```
+
+See [`docs/triton_capacity_evidence.md`](docs/triton_capacity_evidence.md) for the measurement contract and evidence boundaries.
+
+## v1.1 serving safety remains intact
+
+The active artifact is a `RandomForestClassifier` wrapped by Platt calibration. Exporting only the base estimator would change probabilities used by the frozen policy threshold.
 
 ```text
 support_base
@@ -120,54 +194,34 @@ models/triton/
     │   └── 1/model.onnx
     └── support_ensemble/
         ├── config.pbtxt
-        └── 1/
+        └── 1/version.txt
 ```
 
-`contract.json` records model/policy/schema versions, transformed feature count, calibration parameters, batching configuration, model family, ONNX compatibility metadata, accelerator boundary, and SHA-256 artifact hashes.
+`contract.json` records model/policy/schema versions, transformed feature count, calibration parameters, batching configuration, ONNX compatibility metadata, model family, accelerator boundary, and artifact hashes.
 
-## Why real-server testing is a separate gate
+### Real-server failures that became release controls
 
-Local ONNX Runtime parity alone did not prove deployability. Real Triton testing found two defects that static/local checks initially missed:
+Real Triton CI found defects that local ONNX execution did not expose:
 
 ```text
-1. Platt calibrator ONNX
+1. custom Platt calibrator
    local ONNX Runtime: PASS
    Triton 25.06: FAIL
-   reason: ONNX IR 13 > validated server limit 10
+   reason: ONNX IR 13 exceeded validated runtime limit 10
 
 2. after IR compatibility fix
    support_base: READY
    support_calibrator: READY
    support_ensemble: FAIL
    reason: missing numeric model-version directory
+
+3. after adding support_ensemble/1/
+   local workspace: valid
+   cross-job GitHub artifact: directory disappeared
+   reason: empty directories are not preserved
 ```
 
-The exporter/validator now enforce both constraints. Release evidence therefore distinguishes:
-
-```text
-ONNX file created
-≠ local ONNX parity passed
-≠ Triton repository structurally valid
-≠ real Triton server loaded all models
-≠ runtime HTTP parity passed
-```
-
-Each is a separate gate.
-
-## Dynamic batching contract
-
-Generated Triton configs use bounded defaults:
-
-```text
-max batch size          128
-preferred batch sizes   8, 32, 64
-base queue delay        500 microseconds
-calibrator queue delay  250 microseconds
-```
-
-Required runtime CI confirms Triton actually loaded the batching configuration and executes inference at batches `1/8/32/64/128`.
-
-This does **not** claim that concurrent requests were proven to coalesce into preferred dynamic batches. Production batching tuning still requires representative concurrency plus queue-time, execution-count, latency, and throughput evidence.
+The exporter/validator now pins and records the validated ONNX IR limit, requires the ensemble version directory, and preserves it across artifact transfer with a hashed version marker.
 
 ## Preprocessing boundary
 
@@ -180,11 +234,11 @@ raw validated request
 → Triton support_ensemble
 ```
 
-The fitted `preprocessor.joblib` is versioned and hashed in the serving contract. The repository does not claim that raw categorical preprocessing currently executes inside Triton.
+The fitted `preprocessor.joblib` is versioned and hashed. The project does not claim that raw categorical preprocessing currently executes inside Triton.
 
 ## Why the current champion remains CPU_ONLY
 
-The validated champion is a calibrated tree ensemble. GPU capacity is not allocated simply because the platform supports A100 node scheduling.
+The validated champion is a calibrated tree ensemble.
 
 ```text
 model family = tree_ensemble
@@ -194,50 +248,20 @@ accelerator policy
 CPU_ONLY
 ```
 
-A future GPU-compatible model must provide all required evidence before `GPU_ELIGIBLE`:
+A future GPU-compatible model must provide separate evidence before `GPU_ELIGIBLE`:
 
 ```text
 approved model family
 + real GPU runtime evidence
 + probability parity PASS
 + policy-decision parity PASS
-+ meaningful throughput speedup
++ meaningful throughput improvement
 + acceptable p95 latency
 + useful/safe sustained GPU utilization
 → GPU_ELIGIBLE
 ```
 
-Helm fails closed: the current tree model cannot be forced onto GPU merely by setting `accelerator=gpu`.
-
-## GPU-aware scaling is evidence-gated
-
-The reference scaling decision considers:
-
-```text
-accelerator eligibility
-GPU utilization
-Triton queue time
-average batch size
-replica limits
-```
-
-Examples:
-
-```text
-high queue pressure
-→ SCALE_OUT candidate
-
-low GPU + low queue + healthy batching
-→ SCALE_IN candidate
-
-low GPU + low queue + average batch ≈ 1
-→ HOLD; inspect batching first
-
-accelerator != GPU_ELIGIBLE
-→ GPU_PROFILE_DISABLED
-```
-
-This is tested decision logic, not a claim that a live GPU autoscaler has been exercised.
+Helm fails closed: the current tree model cannot be forced onto GPU merely by setting a GPU flag.
 
 ## Production control chain
 
@@ -267,19 +291,20 @@ Retraining, model promotion, environment promotion, and production authorization
 
 ```text
 evidence
-  ├── train/calibrate/OOT evaluate
+  ├── chronological train/calibrate/OOT evaluation
   ├── ONNX export + compatibility + local parity
-  ├── accelerator decision
   ├── monitoring/governance
   └── tests/lint/security/dependency audits
          │
-         ├────────────┬────────────────────┬──────────────────┐
-         ↓            ↓                    ↓                  ↓
-  triton-contract  triton-cpu-runtime  container-and-kind  registry-integration
-         │            │                    │                  │
-  repo/Helm rules  real Triton server   Docker/kind        MLflow lifecycle
-  GPU fail-closed  HTTP parity/metrics  immutable ID       canary/rollback
-         └────────────┴──────────────┬─────┴──────────────────┘
+         ├────────────┬───────────────────┬──────────────────┬──────────────────┐
+         ↓            ↓                   ↓                  ↓                  ↓
+ triton-contract  triton-cpu-runtime  triton-capacity  container-and-kind  registry-integration
+         │            │                   │                  │                  │
+ repo/Helm rules  real server parity  concurrency        Docker/kind        MLflow lifecycle
+ GPU fail-closed  batching config     actual batching    immutable ID       canary/rollback
+                                      Perf Analyzer
+                                      capacity policy
+         └────────────┴──────────────┬────┴──────────────────┴──────────────────┘
                                      ↓
                          production-promotion-control
                                      ↓
@@ -308,10 +333,16 @@ Build the ONNX/Triton serving package:
 make triton
 ```
 
-With Docker and access to the Triton image, run the real CPU runtime drill:
+Run the real Triton CPU parity drill:
 
 ```bash
 make triton-runtime-cpu
+```
+
+Run the v1.2 concurrency, Perf Analyzer, and capacity evidence path:
+
+```bash
+make triton-capacity
 ```
 
 Run the MLflow registry/API lifecycle:
@@ -332,14 +363,17 @@ continuous monitoring/retraining decisions
 Docker/Kubernetes/Helm controls
 immutable environment promotion
 ONNX export preserving calibration
-ONNX/Triton runtime compatibility checks
+ONNX/Triton runtime compatibility
 native ↔ local ONNX probability/policy parity
 real Triton CPU server readiness
-real Triton HTTP probability parity for batches 1/8/32/64/128
+real Triton HTTP probability parity
 runtime-loaded batching configuration
-Triton inference metrics
+real concurrent HTTP correctness
+Prometheus-derived actual average batch size
+NVIDIA Triton Perf Analyzer execution
+SLO/headroom capacity policy
+bounded reference replica decision
 accelerator eligibility gate
-GPU-aware scaling decision logic
 current tree-model GPU fail-closed control
 ```
 
@@ -347,6 +381,7 @@ Not claimed without separate runtime evidence:
 
 ```text
 real bank customer data
+production capacity guarantee
 current RandomForest acceleration on A100
 CUDA/TensorRT performance
 real GPU throughput improvement
