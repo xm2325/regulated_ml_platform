@@ -101,12 +101,23 @@ def _infer(client: httpx.Client, endpoint: str, payload: dict[str, Any], expecte
             "max_absolute_probability_error": max_error,
             "error": None,
         }
-    except Exception as exc:  # noqa: BLE001 - benchmark must record request failures instead of dropping the scenario
+    except Exception as exc:  # noqa: BLE001 - benchmark records request failures rather than dropping the scenario
         return {
             "latency_ms": (time.perf_counter() - start) * 1000.0,
             "max_absolute_probability_error": None,
             "error": f"{type(exc).__name__}: {exc}",
         }
+
+
+def _burst_infer(
+    client: httpx.Client,
+    endpoint: str,
+    barrier: threading.Barrier,
+    payload: dict[str, Any],
+    expected: np.ndarray,
+) -> dict[str, Any]:
+    barrier.wait()
+    return _infer(client, endpoint, payload, expected)
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -178,13 +189,19 @@ def benchmark_concurrency(
             with ThreadPoolExecutor(max_workers=concurrency) as executor:
                 for round_index in range(rounds_per_level):
                     barrier = threading.Barrier(concurrency + 1)
-
-                    def run_request(slot: int) -> dict[str, Any]:
-                        barrier.wait()
+                    futures = []
+                    for slot in range(concurrency):
                         index = (request_offset + round_index * concurrency + slot) % len(payloads)
-                        return _infer(client, endpoint, payloads[index], expected_outputs[index])
-
-                    futures = [executor.submit(run_request, slot) for slot in range(concurrency)]
+                        futures.append(
+                            executor.submit(
+                                _burst_infer,
+                                client,
+                                endpoint,
+                                barrier,
+                                payloads[index],
+                                expected_outputs[index],
+                            )
+                        )
                     barrier.wait()
                     results.extend(future.result() for future in futures)
 
