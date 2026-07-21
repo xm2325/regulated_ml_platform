@@ -204,7 +204,7 @@ def export_triton_repository(
     base_dir = repository / "support_base"
     calibrator_dir = repository / "support_calibrator"
     ensemble_dir = repository / "support_ensemble"
-    for directory in [base_dir / "1", calibrator_dir / "1", ensemble_dir]:
+    for directory in [base_dir / "1", calibrator_dir / "1", ensemble_dir / "1"]:
         directory.mkdir(parents=True, exist_ok=True)
 
     base_model = convert_sklearn(
