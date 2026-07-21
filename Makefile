@@ -1,4 +1,4 @@
-.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton triton-runtime-cpu batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -33,6 +33,8 @@ accelerator:
 	python -m src.operations.accelerator_policy --contract models/triton/contract.json --policy config/accelerator_policy.yaml --output reports/accelerator_decision.json
 triton: triton-export triton-validate triton-parity triton-benchmark accelerator
 	python -m pip freeze | grep -E '^(onnx|onnxruntime|skl2onnx)==' > reports/onnx_toolchain_versions.txt
+triton-runtime-cpu:
+	bash scripts/triton_cpu_runtime_smoke.sh
 batch:
 	python -m src.serving.batch_score --input data/raw/customers.csv --output reports/batch_predictions.csv
 load:
