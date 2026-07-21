@@ -1,40 +1,40 @@
 # Regulated AI MLOps Platform
 
 [![Platform](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/platform.yml)
+[![Triton CPU runtime](https://github.com/xm2325/regulated_ml_platform/actions/workflows/triton-cpu-runtime.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/triton-cpu-runtime.yml)
 [![CodeQL](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml/badge.svg)](https://github.com/xm2325/regulated_ml_platform/actions/workflows/codeql.yml)
 [![Pages](https://img.shields.io/badge/evidence-dashboard-blue)](https://xm2325.github.io/regulated_ml_platform/)
 
-**A production-style regulated ML reference platform covering chronological evaluation, MLflow registry serving, controlled canary release, monitoring, immutable promotion, rollback, and an evidence-gated ONNX/Triton serving path.**
+**A production-style regulated ML reference platform covering chronological evaluation, calibrated model serving, MLflow registry lifecycle, controlled canary release, monitoring, immutable promotion, rollback, and a verified ONNX/Triton CPU inference path.**
 
-[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [Triton serving](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Canary runtime](docs/canary_runtime.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
+[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Canary runtime](docs/canary_runtime.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
 
 ## Result first
 
 Platform/service version: `1.1.0`. Validated calibrated model release: `0.6.0`.
 
-v1.1 adds a verifiable serving representation and accelerator decision path without claiming unsupported GPU performance.
-
 ```text
-validated calibrated champion
+chronological model development
         ↓
-fitted preprocessing contract
+calibration + frozen policy threshold
         ↓
-base estimator ONNX
+MLflow registry / champion / challenger / rollback
         ↓
-Platt calibration ONNX
+stable canary + online safety gate
         ↓
-Triton ensemble repository
+verified serving export
         ↓
-probability + policy parity
+base estimator ONNX + Platt calibrator ONNX
         ↓
-CPU execution evidence
+real Triton support_ensemble on CPU
+        ↓
+runtime HTTP parity + batching + metrics evidence
         ↓
 accelerator policy
-   ┌────┴──────────────┐
-   ↓                   ↓
-current tree model   future GPU-compatible model
-   ↓                   ↓
-CPU_ONLY            real GPU benchmark required
+   ┌────┴─────────────────────┐
+   ↓                          ↓
+current tree champion       future GPU-compatible model
+CPU_ONLY                    real GPU evidence required
 ```
 
 ### Validated model
@@ -49,31 +49,50 @@ CPU_ONLY            real GPU benchmark required
 | High-confidence precision | 0.8828 |
 | Frozen policy threshold | 0.70 |
 
-### v1.1 GitHub Actions evidence
+### v1.1 evidence
 
 | Evidence | Result |
 |---|---:|
 | Triton repository validation | PASS |
-| Native ↔ ONNX parity sample | 256 |
-| Maximum absolute probability error | `1.76e-7` |
-| Mean absolute probability error | `4.65e-8` |
-| Policy-decision mismatches | 0 |
+| Native ↔ local ONNX parity sample | 256 |
+| Local ONNX policy-decision mismatches | 0 |
+| Real Triton 25.06 CPU server | PASS |
+| `support_base` / `support_calibrator` / `support_ensemble` | READY |
+| Real HTTP batches | 1, 8, 32, 64, 128 |
+| Real HTTP probability parity | PASS for all batches |
+| Largest observed Triton probability error | `3.57e-7` |
+| Runtime-loaded dynamic batching contract | PASS |
+| Triton `nv_inference_*` metrics | PRESENT |
 | Current accelerator decision | `CPU_ONLY` |
-| Alert/runbook contract | PASS, 10 alerts |
-| Triton model-repository image build | PASS |
-| CPU Triton Helm contract | PASS |
 | Current tree-model forced-GPU rejection | PASS |
-| Future GPU-compatible deployment contract | PASS |
-| Docker + kind path | PASS |
+| Docker + kind + Helm path | PASS |
 | MLflow registry/canary/promotion/rollback | PASS |
 | Production approval-pending block | PASS |
 | CodeQL | PASS |
 
-## v1.1: preserve model semantics during serving export
+## Real Triton CPU runtime evidence
 
-The active artifact is a Platt-calibrated classifier. Exporting only the underlying estimator would change the probabilities used by the frozen policy threshold.
+A GitHub-hosted CI run starts the official NVIDIA Triton Inference Server `25.06` image with GPU metrics disabled, loads the generated model repository, and sends real V2 HTTP inference requests.
 
-v1.1 therefore generates:
+Reference hosted-CI run:
+
+| Batch | Triton p50 | Triton p95 | Rows/s at p50 | Max abs probability error |
+|---:|---:|---:|---:|---:|
+| 1 | 2.03 ms | 2.78 ms | 493 | `3.82e-8` |
+| 8 | 1.18 ms | 1.26 ms | 6,790 | `2.77e-7` |
+| 32 | 2.08 ms | 2.16 ms | 15,371 | `3.57e-7` |
+| 64 | 2.43 ms | 3.80 ms | 26,376 | `1.36e-7` |
+| 128 | 4.00 ms | 4.07 ms | 32,000 | `1.76e-7` |
+
+These are small hosted-runner reference measurements, not production capacity numbers. The important release evidence is that every tested batch preserved probability semantics within tolerance and the actual server loaded the intended batching configuration.
+
+See [`docs/triton_runtime_evidence.md`](docs/triton_runtime_evidence.md) for the full evidence and failure analysis.
+
+## Serving representation preserves calibration
+
+The active artifact is a `RandomForestClassifier` wrapped by Platt calibration. Exporting only the underlying estimator would change the probabilities used by the frozen policy threshold.
+
+v1.1 therefore builds:
 
 ```text
 support_base
@@ -86,62 +105,58 @@ support_ensemble
 support_base → support_calibrator → SUPPORT_PROBABILITY
 ```
 
-Generated structure:
+Generated repository:
 
 ```text
 models/triton/
 ├── contract.json
 ├── preprocessor.joblib
 └── model_repository/
-    ├── support_base/1/model.onnx
-    ├── support_base/config.pbtxt
-    ├── support_calibrator/1/model.onnx
-    ├── support_calibrator/config.pbtxt
-    └── support_ensemble/config.pbtxt
+    ├── support_base/
+    │   ├── config.pbtxt
+    │   └── 1/model.onnx
+    ├── support_calibrator/
+    │   ├── config.pbtxt
+    │   └── 1/model.onnx
+    └── support_ensemble/
+        ├── config.pbtxt
+        └── 1/
 ```
 
-`contract.json` records model/policy/schema versions, feature count, batching configuration, calibration parameters, model family, accelerator boundary, and SHA-256 artifact hashes.
+`contract.json` records model/policy/schema versions, transformed feature count, calibration parameters, batching configuration, model family, ONNX compatibility metadata, accelerator boundary, and SHA-256 artifact hashes.
 
-## Probability and policy parity are release gates
+## Why real-server testing is a separate gate
 
-Required CI runs the same observations through native calibrated sklearn and the exported ONNX execution path.
-
-Current evidence:
+Local ONNX Runtime parity alone did not prove deployability. Real Triton testing found two defects that static/local checks initially missed:
 
 ```text
-sample size                     256
-max absolute probability error  0.000000176
-mean absolute probability error 0.0000000465
-policy decision mismatches      0
-status                          PASS
+1. Platt calibrator ONNX
+   local ONNX Runtime: PASS
+   Triton 25.06: FAIL
+   reason: ONNX IR 13 > validated server limit 10
+
+2. after IR compatibility fix
+   support_base: READY
+   support_calibrator: READY
+   support_ensemble: FAIL
+   reason: missing numeric model-version directory
 ```
 
-A conversion is not accepted merely because an `.onnx` file was created.
-
-## CPU benchmark: not a Triton/GPU benchmark
-
-Required hosted CI compares native sklearn with ONNX Runtime CPU on the same runner.
-
-| Batch | Native p50 | ONNX Runtime CPU p50 | Throughput ratio |
-|---:|---:|---:|---:|
-| 1 | 46.09 ms | 2.32 ms | 19.85× |
-| 8 | 46.41 ms | 2.15 ms | 21.58× |
-| 32 | 46.78 ms | 2.76 ms | 16.96× |
-| 64 | 46.97 ms | 2.91 ms | 16.16× |
-| 128 | 67.15 ms | 3.37 ms | 19.92× |
-
-The report explicitly records:
+The exporter/validator now enforce both constraints. Release evidence therefore distinguishes:
 
 ```text
-runtime_evidence = real_cpu
-not_a_triton_runtime_benchmark = true
+ONNX file created
+≠ local ONNX parity passed
+≠ Triton repository structurally valid
+≠ real Triton server loaded all models
+≠ runtime HTTP parity passed
 ```
 
-These numbers are not presented as Triton server, CUDA, TensorRT, A100, or GPU benchmark results.
+Each is a separate gate.
 
 ## Dynamic batching contract
 
-Generated Triton configs use bounded batching defaults:
+Generated Triton configs use bounded defaults:
 
 ```text
 max batch size          128
@@ -150,13 +165,26 @@ base queue delay        500 microseconds
 calibrator queue delay  250 microseconds
 ```
 
-Prometheus recording rules combine request rate, average batch size, queue time, GPU utilization, and GPU memory utilization where those Triton metrics are available.
+Required runtime CI confirms Triton actually loaded the batching configuration and executes inference at batches `1/8/32/64/128`.
+
+This does **not** claim that concurrent requests were proven to coalesce into preferred dynamic batches. Production batching tuning still requires representative concurrency plus queue-time, execution-count, latency, and throughput evidence.
+
+## Preprocessing boundary
+
+Triton currently consumes the transformed `FP32` feature matrix:
+
+```text
+raw validated request
+→ versioned fitted sklearn preprocessor
+→ transformed FP32 matrix
+→ Triton support_ensemble
+```
+
+The fitted `preprocessor.joblib` is versioned and hashed in the serving contract. The repository does not claim that raw categorical preprocessing currently executes inside Triton.
 
 ## Why the current champion remains CPU_ONLY
 
-The validated champion is a calibrated `RandomForestClassifier`, classified as `tree_ensemble`.
-
-The accelerator policy does not allocate GPU capacity just because the platform supports GPU nodes.
+The validated champion is a calibrated tree ensemble. GPU capacity is not allocated simply because the platform supports A100 node scheduling.
 
 ```text
 model family = tree_ensemble
@@ -166,34 +194,31 @@ accelerator policy
 CPU_ONLY
 ```
 
-A future GPU-compatible model must provide real GPU runtime evidence, parity, throughput improvement, acceptable p95 latency, and useful/safe sustained GPU utilization before `GPU_ELIGIBLE`.
-
-## Helm fails closed for GPU
-
-The optional Triton deployment defaults to CPU and is disabled by default.
-
-A GPU render requires both:
+A future GPU-compatible model must provide all required evidence before `GPU_ELIGIBLE`:
 
 ```text
-gpuEvidenceApproved = true
-AND
-modelFamily is GPU-eligible
+approved model family
++ real GPU runtime evidence
++ probability parity PASS
++ policy-decision parity PASS
++ meaningful throughput speedup
++ acceptable p95 latency
++ useful/safe sustained GPU utilization
+→ GPU_ELIGIBLE
 ```
 
-Required CI proves the current tree model cannot be forced onto GPU even when someone manually flips the GPU flag.
+Helm fails closed: the current tree model cannot be forced onto GPU merely by setting `accelerator=gpu`.
 
-The Triton server image and immutable model-repository image are separate so server runtime provenance and model artifact provenance are not mixed.
+## GPU-aware scaling is evidence-gated
 
-## GPU-aware scaling decision
-
-The reference controller combines:
+The reference scaling decision considers:
 
 ```text
 accelerator eligibility
 GPU utilization
 Triton queue time
 average batch size
-replica boundaries
+replica limits
 ```
 
 Examples:
@@ -205,18 +230,16 @@ high queue pressure
 low GPU + low queue + healthy batching
 → SCALE_IN candidate
 
-low GPU + low queue + batch ≈ 1
+low GPU + low queue + average batch ≈ 1
 → HOLD; inspect batching first
 
 accelerator != GPU_ELIGIBLE
 → GPU_PROFILE_DISABLED
 ```
 
-This is a tested control contract, not a claim that a live production GPU autoscaler has been exercised.
+This is tested decision logic, not a claim that a live GPU autoscaler has been exercised.
 
-## Existing production control chain
-
-v1.1 keeps the earlier lifecycle intact:
+## Production control chain
 
 ```text
 monitor data/model/service
@@ -245,32 +268,23 @@ Retraining, model promotion, environment promotion, and production authorization
 ```text
 evidence
   ├── train/calibrate/OOT evaluate
-  ├── ONNX export + parity + CPU benchmark
+  ├── ONNX export + compatibility + local parity
   ├── accelerator decision
   ├── monitoring/governance
   └── tests/lint/security/dependency audits
          │
-         ├─────────────┬───────────────────┐
-         ↓             ↓                   ↓
-  triton-contract  container-and-kind  registry-integration
-         │             │                   │
-  model-repo image  Docker/kind         Postgres/MinIO/MLflow
-  CPU Helm contract immutable ID        canary/promote/rollback
-  RF GPU rejection  dev→preprod
-         └─────────────┴─────────┬─────────┘
-                                 ↓
-                  production-promotion-control
-                                 ↓
-                    approval pending → BLOCKED
+         ├────────────┬────────────────────┬──────────────────┐
+         ↓            ↓                    ↓                  ↓
+  triton-contract  triton-cpu-runtime  container-and-kind  registry-integration
+         │            │                    │                  │
+  repo/Helm rules  real Triton server   Docker/kind        MLflow lifecycle
+  GPU fail-closed  HTTP parity/metrics  immutable ID       canary/rollback
+         └────────────┴──────────────┬─────┴──────────────────┘
+                                     ↓
+                         production-promotion-control
+                                     ↓
+                         approval pending → BLOCKED
 ```
-
-## Real GPU evidence is separate
-
-`.github/workflows/triton-gpu-evidence.yml` is manual and requires a self-hosted GPU runner.
-
-Its existence does not mean GPU evidence has been produced. It is designed to run a real Triton server, HTTP inference benchmark/parity, and Triton/GPU metric capture only when real NVIDIA runtime is available.
-
-For the current tree-ensemble model it still preserves `CPU_ONLY`; running on a GPU-capable host is not itself proof of GPU acceleration.
 
 ## Run locally
 
@@ -288,25 +302,25 @@ make audit
 make audit-onnx
 ```
 
-Run only the v1.1 serving evidence path after training:
+Build the ONNX/Triton serving package:
 
 ```bash
 make triton
 ```
 
-Run the local API:
+With Docker and access to the Triton image, run the real CPU runtime drill:
 
 ```bash
-make serve
+make triton-runtime-cpu
 ```
 
-Run the full local MLflow registry/API lifecycle when Docker is available:
+Run the MLflow registry/API lifecycle:
 
 ```bash
 make registry-smoke
 ```
 
-## Boundaries
+## Evidence boundaries
 
 Automatically validated:
 
@@ -318,16 +332,18 @@ continuous monitoring/retraining decisions
 Docker/Kubernetes/Helm controls
 immutable environment promotion
 ONNX export preserving calibration
-Triton model repository + batching contract
-native↔ONNX probability/policy parity
-CPU ONNX Runtime benchmark
+ONNX/Triton runtime compatibility checks
+native ↔ local ONNX probability/policy parity
+real Triton CPU server readiness
+real Triton HTTP probability parity for batches 1/8/32/64/128
+runtime-loaded batching configuration
+Triton inference metrics
 accelerator eligibility gate
 GPU-aware scaling decision logic
-Triton/GPU monitoring and runbooks
 current tree-model GPU fail-closed control
 ```
 
-Not claimed without further runtime evidence:
+Not claimed without separate runtime evidence:
 
 ```text
 real bank customer data
@@ -338,5 +354,7 @@ live GPU autoscaling
 live service-mesh operation
 fully autonomous production promotion
 ```
+
+`.github/workflows/triton-gpu-evidence.yml` is manual and requires a real self-hosted GPU runner. Its existence is not GPU evidence by itself.
 
 The dataset, target, and customer actions are synthetic. This repository demonstrates ML engineering and production-control patterns and must not be used for real financial decisions.
