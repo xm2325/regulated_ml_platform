@@ -23,6 +23,7 @@ contract:
 	python -m src.governance.model_contract --metadata models/metadata.json --output-json models/model_contract.json --output-md docs/model_contract.md
 triton-export:
 	python -m src.serving.triton_export --model models/model.joblib --metadata models/metadata.json --sample data/processed/features.csv --output-root models/triton
+	python -m src.serving.normalize_onnx_ir --model models/triton/model_repository/support_calibrator/1/model.onnx --contract models/triton/contract.json --artifact-key support_calibrator_onnx_sha256 --max-ir-version 10 --output reports/onnx_ir_compatibility.json
 triton-validate:
 	python -m src.operations.validate_triton_repository --root models/triton --output reports/triton_repository_validation.json
 triton-parity:
