@@ -1,6 +1,6 @@
 # v1.3 CSC Roihu GH200 GPU 实操与证据手册
 
-> 状态：可执行 runbook 与 fail-closed 证据契约；仓库内没有预先声称任何已完成的 Roihu、GPU、TensorRT、Triton 或生产运行结果。
+> 状态：可执行 runbook 与 fail-closed 证据契约。真实运行结果单独记录在 [CSC Roihu GH200 execution record](roihu_gpu_execution_record.md)；正式候选 profile 的当前结论是 `GPU_REJECTED`，不是生产批准。
 
 本手册把 Lloyds ML/AI Engineer 职位中的 GPU 推理、性能验证、可观测性、受控交付和回滚思维，落实为一条可审计的 CSC Roihu 实操路径。目标硬件是 Roihu-GPU 的 NVIDIA Grace Hopper GH200：GPU 节点为 `aarch64`，每个完整 GH200 配套最多 72 个 Grace CPU 核。这里的练习对象是确定性的合成神经网络候选，不是当前 tree-ensemble champion。
 
@@ -493,6 +493,10 @@ helm template regulated-ai helm/regulated-ai \
 | Triton health/metrics | readiness、`/v2`、`.prom` | 待运行 | 无错误且存在 inference/GPU observations |
 | Artifact integrity | manifests + `SHA256SUMS` | 待运行 | 每个 byte 与声明一致 |
 | Final decision | `decision.json` + SHA-256 | 待运行 | `GPU_ELIGIBLE` 仍不自动 promotion |
+
+已完成运行不要回填到上面的复用模板；请阅读独立的
+[execution record](roihu_gpu_execution_record.md)。该记录保留 smoke passes、失败尝试、
+正式 `304890` 运行和 finalizer `304891` 的 `GPU_REJECTED` 结论及 claim boundary。
 
 ## 11. 常见故障与排查顺序
 

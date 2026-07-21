@@ -8,7 +8,7 @@
 
 **A production-style regulated ML reference platform with chronological evaluation, calibration, MLflow registry lifecycle, canary release, monitoring, immutable promotion, rollback, real Triton CPU inference, runtime dynamic-batching evidence, bounded capacity planning, and a fail-closed CSC Roihu GH200 qualification path.**
 
-[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [v1.3 Roihu GPU runbook](docs/roihu_gpu_evidence.md) · [v1.2 capacity evidence](docs/triton_capacity_evidence.md) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
+[Evidence dashboard](https://xm2325.github.io/regulated_ml_platform/) · [v1.3 Roihu GPU runbook](docs/roihu_gpu_evidence.md) · [Roihu execution record](docs/roihu_gpu_execution_record.md) · [v1.2 capacity evidence](docs/triton_capacity_evidence.md) · [Real Triton runtime evidence](docs/triton_runtime_evidence.md) · [Triton serving design](docs/triton_serving.md) · [Production operations](docs/production_operations.md) · [Registry runtime](docs/registry_runtime.md) · [Incident runbooks](docs/runbooks/ml_platform_incidents.md)
 
 ## Result first
 
@@ -75,6 +75,12 @@ clean, committed source
 ```
 
 The formal gate requires at least 300 seconds and 1,000 samples for both CPU and GPU paths, at least 1,000 parity rows, zero policy-decision mismatches, bounded HTTP errors, measurable speedup, latency, sustained utilization and memory headroom, plus the exact source/model/SIF bytes. `gputest` and the shorter TensorRT/Triton path are deliberately `SMOKE_ONLY` and cannot issue eligibility.
+
+The first completed formal profile, job `304890` with dependent finalizer
+`304891`, was correctly `GPU_REJECTED`: throughput and parity passed, while the
+GPU/CPU p95 ratio and sustained-utilization band did not. No profile or champion
+was changed. The exact metrics, hashes, failed attempts, and claim boundaries are
+preserved in the [Roihu execution record](docs/roihu_gpu_execution_record.md).
 
 GitHub Actions remains the cloud contract runner: it validates the Python/shell/Helm code, rejection paths, immutable source bundle, and the audited SHA-256-pinned ARM64 ONNX/protobuf staging input, while explicitly recording that an `ubuntu-latest` runner does not prove a GPU. The Roihu batch job installs that exact wheelhouse only from a verified project path with `--no-index --no-deps --require-hashes`. Real accelerator evidence can originate only from the governed Roihu Slurm path.
 
