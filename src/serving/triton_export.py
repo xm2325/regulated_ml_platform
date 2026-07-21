@@ -14,6 +14,7 @@ from src.features.build_features import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 
 TRITON_ONNX_MAX_IR_VERSION = 10
 ONNX_TARGET_OPSET = 18
+PLATFORM_VERSION = "1.2.0"
 
 
 def _sha256(path: Path) -> str:
@@ -94,9 +95,6 @@ def _build_calibrator_onnx(slope: float, intercept: float, output_path: Path) ->
         producer_name="regulated_ml_platform",
         opset_imports=[helper.make_opsetid("", ONNX_TARGET_OPSET)],
     )
-    # Newer ONNX packages may emit a newer IR by default than the ONNX Runtime
-    # backend in the validated Triton server can load. Pin the small custom graph
-    # to the validated runtime contract instead of relying on library defaults.
     model.ir_version = TRITON_ONNX_MAX_IR_VERSION
     ir_version = _require_triton_ir_compatibility(model, "support_calibrator")
     onnx.checker.check_model(model)
@@ -240,7 +238,8 @@ def export_triton_repository(
     family = _model_family(estimator)
     contract = {
         "contract_version": "triton-serving-contract-v1",
-        "platform_version": "1.1.0",
+        "platform_version": PLATFORM_VERSION,
+        "capacity_evidence_contract": "triton-capacity-evidence-v1",
         "model_release_version": metadata.get("model_version"),
         "policy_version": metadata.get("policy_version"),
         "feature_schema_version": metadata.get("feature_schema_version"),
