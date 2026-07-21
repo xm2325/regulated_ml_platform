@@ -286,15 +286,18 @@ nvidia-smi --query-gpu=index,uuid,name,driver_version,memory.total,compute_cap -
   >"${EVIDENCE_DIR}/nvidia-smi-snapshot.csv"
 
 APPTAINER_ARGS=(--cleanenv --containall --nv --bind "${WORK_DIR}:/work")
+TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec
 apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" uname -m >"${EVIDENCE_DIR}/triton-sdk-architecture.txt"
 grep -qx 'aarch64' "${EVIDENCE_DIR}/triton-sdk-architecture.txt" || fail "SDK SIF is not executable as aarch64 on Roihu-GPU"
 apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SERVER_SIF}" uname -m >"${EVIDENCE_DIR}/triton-server-architecture.txt"
 grep -qx 'aarch64' "${EVIDENCE_DIR}/triton-server-architecture.txt" || fail "server SIF is not executable as aarch64 on Roihu-GPU"
-apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" trtexec --help \
+apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" test -x "${TRTEXEC_PATH}" \
+  || fail "SDK SIF does not provide the expected TensorRT executable"
+apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" "${TRTEXEC_PATH}" --help \
   >"${EVIDENCE_DIR}/trtexec-version-and-help.txt" 2>&1
 
 TRTEXEC_COMMAND=(
-  trtexec
+  "${TRTEXEC_PATH}"
   --onnx=/work/accelerator_qualification.onnx
   --saveEngine=/work/model_repository/accelerator_qualification/1/model.plan
   --minShapes=INPUT__0:1x1024

@@ -266,15 +266,18 @@ mkdir -p -- "${MODEL_VERSION_DIR}"
 cp -- "${ONNX_PATH}" "${WORK_DIR}/accelerator_qualification.onnx"
 cp -- "${TRITON_CONFIG_PATH}" "${MODEL_REPOSITORY}/accelerator_qualification/config.pbtxt"
 APPTAINER_ARGS=(--cleanenv --containall --nv --bind "${WORK_DIR}:/work")
+TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec
 apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" uname -m >"${EVIDENCE_DIR}/raw/sdk-architecture.txt"
 grep -qx aarch64 "${EVIDENCE_DIR}/raw/sdk-architecture.txt" || fail "SDK SIF is not aarch64"
 apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SERVER_SIF}" uname -m >"${EVIDENCE_DIR}/raw/server-architecture.txt"
 grep -qx aarch64 "${EVIDENCE_DIR}/raw/server-architecture.txt" || fail "server SIF is not aarch64"
-apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" trtexec --help \
+apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" test -x "${TRTEXEC_PATH}" \
+  || fail "SDK SIF does not provide the expected TensorRT executable"
+apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" "${TRTEXEC_PATH}" --help \
   >"${EVIDENCE_DIR}/raw/trtexec-version-and-help.txt" 2>&1
 apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" nvcc --version \
   >"${EVIDENCE_DIR}/raw/nvcc-version.txt" 2>&1
-apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" trtexec \
+apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" "${TRTEXEC_PATH}" \
   --onnx=/work/accelerator_qualification.onnx \
   --saveEngine=/work/model_repository/accelerator_qualification/1/model.plan \
   --minShapes=INPUT__0:1x1024 \

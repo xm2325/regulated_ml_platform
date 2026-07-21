@@ -132,6 +132,8 @@ def test_triton_smoke_is_loopback_digest_verified_and_not_gate_evidence():
     assert '"status": "SMOKE_PASS"' in script
     assert "--cleanenv --containall --nv" in script
     assert "trtexec" in script and "tritonserver" in script and "perf_analyzer" in script
+    assert "TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec" in script
+    assert 'test -x "${TRTEXEC_PATH}"' in script
     assert "--http-address=127.0.0.1" in script
     assert "--grpc-address=127.0.0.1" in script
     assert "--metrics-address=127.0.0.1" in script
@@ -158,6 +160,7 @@ def test_full_qualification_has_formal_duration_parity_and_telemetry_contracts()
         "-lms 200",
         "--format=csv,nounits",
         "--noTF32",
+        "TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec",
         "CSC_ENV_INIT_NON_INTERACTIVE=yes",
         "source /etc/profile.d/zz-csc-env.sh",
         "nvcc --version",
