@@ -1,0 +1,21 @@
+platform_version: "1.2.0"
+reference_workload:
+  request_batch_size: 1
+  concurrency_levels: [1, 4, 8, 16, 32]
+  rounds_per_level: 12
+service_objectives:
+  p95_latency_ms: 20.0
+  p99_latency_ms: 35.0
+  max_http_error_rate: 0.0
+  max_absolute_probability_error: 0.00005
+batching:
+  minimum_effective_average_batch_size: 1.5
+  minimum_batching_gain_at_concurrency: 1.25
+capacity:
+  safety_headroom_fraction: 0.70
+  reference_target_rows_per_second: 10000.0
+  max_reference_replicas: 16
+  minimum_slo_passing_scenarios: 2
+claim_boundary:
+  production_capacity_claim_allowed: false
+  gpu_capacity_claim_allowed: false
