@@ -1,5 +1,5 @@
 from src.operations.benchmark_triton_concurrency import _metric_delta, _metric_total, parse_prometheus
-from src.operations.triton_capacity_plan import build_capacity_plan
+from src.operations.triton_capacity_plan import _normalize_perf_row, build_capacity_plan
 
 
 def _policy():
@@ -43,6 +43,17 @@ def _scenario(concurrency, rows_per_second, average_batch_size, p95=10.0, p99=15
     }
 
 
+def _perf(concurrency, throughput, p95_usec=9000.0, p99_usec=12000.0):
+    return {
+        "Concurrency": concurrency,
+        "Inferences/Second": throughput,
+        "p50 latency": 5000.0,
+        "p95 latency": p95_usec,
+        "p99 latency": p99_usec,
+        "Server Queue": 10.0,
+    }
+
+
 def test_prometheus_parser_aggregates_model_metrics_and_deltas():
     before = parse_prometheus(
         'nv_inference_count{model="support_base",version="1"} 100\n'
@@ -57,7 +68,15 @@ def test_prometheus_parser_aggregates_model_metrics_and_deltas():
     assert _metric_delta(before, after, "nv_inference_exec_count", "support_base") == 4
 
 
-def test_capacity_plan_uses_slo_passing_throughput_batching_and_headroom():
+def test_perf_analyzer_csv_latency_is_normalized_from_microseconds_to_ms():
+    row = _normalize_perf_row(_perf(8, 3000.0, p95_usec=9000.0, p99_usec=12000.0))
+    assert row["concurrency"] == 8
+    assert row["inferences_per_second"] == 3000.0
+    assert row["p95_latency_ms"] == 9.0
+    assert row["p99_latency_ms"] == 12.0
+
+
+def test_capacity_plan_uses_perf_analyzer_for_capacity_and_custom_client_for_semantics():
     benchmark = {
         "status": "PASS",
         "scenarios": [
@@ -66,14 +85,19 @@ def test_capacity_plan_uses_slo_passing_throughput_batching_and_headroom():
             _scenario(8, 3000.0, 4.5),
         ],
     }
-    perf_rows = [{"Concurrency": 8.0, "Inferences/Second": 2900.0, "p95 latency": 9000.0}]
+    perf_rows = [
+        _perf(4, 2200.0, p95_usec=6000.0, p99_usec=9000.0),
+        _perf(8, 3000.0, p95_usec=9000.0, p99_usec=12000.0),
+    ]
     report = build_capacity_plan(benchmark, _policy(), perf_rows)
     assert report["status"] == "PASS"
     assert report["decision"] == "SCALE_REPLICAS_FOR_REFERENCE_TARGET"
     assert report["batching_evidence"]["observed"] is True
+    assert report["capacity_evidence"]["source"] == "nvidia_triton_perf_analyzer"
     assert report["capacity_evidence"]["best_slo_passing_concurrency"] == 8
     assert report["capacity_evidence"]["safe_reference_rows_per_second_per_replica"] == 2100.0
     assert report["capacity_evidence"]["recommended_reference_replicas"] == 5
+    assert report["semantic_client_observation"]["capacity_source"] is False
     assert report["claim_boundary"]["production_capacity_claim_allowed"] is False
 
 
@@ -86,21 +110,40 @@ def test_capacity_plan_blocks_replica_recommendation_when_batching_is_not_effect
             _scenario(8, 1800.0, 1.10),
         ],
     }
-    report = build_capacity_plan(benchmark, _policy())
+    perf_rows = [_perf(4, 2500.0), _perf(8, 3500.0)]
+    report = build_capacity_plan(benchmark, _policy(), perf_rows)
     assert report["status"] == "FAIL"
     assert report["decision"] == "FIX_BATCHING_BEFORE_REPLICA_SCALING"
     assert report["checks"]["dynamic_batching_observed"] is False
 
 
-def test_capacity_plan_fails_when_no_scenario_meets_latency_slo():
+def test_capacity_plan_requires_perf_analyzer_capacity_evidence():
     benchmark = {
         "status": "PASS",
         "scenarios": [
-            _scenario(1, 500.0, 1.0, p95=25.0, p99=40.0),
-            _scenario(4, 900.0, 2.0, p95=30.0, p99=45.0),
+            _scenario(1, 500.0, 1.0),
+            _scenario(4, 1200.0, 2.0),
         ],
     }
     report = build_capacity_plan(benchmark, _policy())
     assert report["status"] == "FAIL"
-    assert report["decision"] == "NO_SLO_PASSING_CAPACITY_POINT"
+    assert report["decision"] == "PERF_ANALYZER_CAPACITY_EVIDENCE_REQUIRED"
+    assert report["capacity_evidence"]["best_slo_passing_concurrency"] is None
+
+
+def test_capacity_plan_fails_when_perf_analyzer_points_miss_latency_slo():
+    benchmark = {
+        "status": "PASS",
+        "scenarios": [
+            _scenario(1, 500.0, 1.0),
+            _scenario(4, 900.0, 2.0),
+        ],
+    }
+    perf_rows = [
+        _perf(4, 2500.0, p95_usec=25000.0, p99_usec=40000.0),
+        _perf(8, 3500.0, p95_usec=30000.0, p99_usec=45000.0),
+    ]
+    report = build_capacity_plan(benchmark, _policy(), perf_rows)
+    assert report["status"] == "FAIL"
+    assert report["decision"] == "INSUFFICIENT_PERF_ANALYZER_SLO_EVIDENCE"
     assert report["capacity_evidence"]["best_slo_passing_concurrency"] is None
