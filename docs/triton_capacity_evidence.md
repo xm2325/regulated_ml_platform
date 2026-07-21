@@ -2,39 +2,35 @@
 
 ## Result first
 
-v1.2 answers a different question from v1.1.
-
-v1.1 proved that the calibrated serving package could be loaded by a real Triton server and preserve probability semantics over HTTP. v1.2 measures what happens when multiple requests arrive together and turns those measurements into a bounded reference capacity decision.
+v1.1 proved that the calibrated serving package could be loaded by a real Triton server and preserve probability semantics over HTTP. v1.2 answers the next operational questions: whether concurrent requests are actually aggregated by Triton's scheduler, where latency/throughput tradeoffs appear, and how to turn server measurements into a bounded reference replica decision.
 
 ```text
 real Triton CPU server
         ↓
-concurrent request bursts
+custom synchronized concurrent HTTP
         ↓
-client p50 / p95 / p99 latency
-        +
-request and row throughput
-        +
-probability parity
+probability parity + HTTP correctness
         +
 Prometheus inference_count / exec_count
         ↓
-observed scheduler average batch size
+observed runtime dynamic batching
         ↓
-NVIDIA Triton Perf Analyzer cross-check
+NVIDIA Triton Perf Analyzer
         ↓
-SLO-passing capacity envelope
+server latency / throughput sweep
         ↓
-safety headroom
+SLO-passing server capacity point
+        ↓
+70% safety headroom
         ↓
 bounded reference replica recommendation
 ```
 
-The CI artifact is the source of truth for measured values. Numbers are copied into the README only after the workflow is green.
+The two benchmark paths have different roles. The custom Python client protects model semantics and proves runtime batching. NVIDIA Triton Perf Analyzer is the server-capacity source. The CI artifact is the source of truth for each run.
 
-## 1. What dynamic batching evidence means
+## 1. Runtime batching is measured, not inferred from config
 
-A `dynamic_batching` block in `config.pbtxt` proves configuration intent, not runtime aggregation.
+A `dynamic_batching` block in `config.pbtxt` proves configuration intent, not actual request aggregation.
 
 v1.2 reads Triton Prometheus counters before and after each concurrency scenario and derives:
 
@@ -44,83 +40,122 @@ observed average batch size
   / delta(nv_inference_exec_count)
 ```
 
-For request batch size 1, a value materially above 1 means multiple inference rows were executed per backend execution on average during that scenario.
+For request batch size 1, a value above 1 means multiple inference rows were executed per backend execution on average.
 
-The benchmark exercises concurrency levels `1 / 4 / 8 / 16 / 32` using synchronized bursts so the scheduler receives genuinely overlapping requests.
+The semantic benchmark exercises concurrency `1 / 4 / 8 / 16 / 32` using synchronized bursts so the server receives overlapping requests. A passing hosted-CI reference run observed a maximum average backend batch size of about `2.82`; at concurrency 4, 48 inference rows were processed in 17 backend executions.
 
-## 2. Semantic safety remains a gate
+## 2. Semantic safety remains a hard gate
 
-Every concurrent request is still compared with the native calibrated sklearn model.
+Every custom concurrent HTTP response is compared with the native calibrated sklearn model.
 
-The concurrency test records:
+The benchmark records:
 
 ```text
 HTTP failure rate
 maximum absolute probability error
-p50 latency
-p95 latency
-p99 latency
-requests per second
-rows per second
+p50 / p95 / p99 latency
+requests and rows per second
 base-model average batch size
 calibrator average batch size
 queue time per inference
 ```
 
-A fast scenario is not accepted when probability parity or HTTP correctness fails.
+A passing reference run completed all requests with zero HTTP failures and maximum absolute probability error below `5.5e-7`, far inside the configured `5e-5` tolerance.
 
-## 3. Independent load-tool cross-check
+This path is deliberately **not** the server-capacity source. Its Python thread scheduling, JSON serialization, HTTP client stack, and synchronized-burst harness add client-side overhead that is useful for end-to-end observation but should not be mistaken for Triton backend capacity.
 
-The workflow also runs NVIDIA Triton Perf Analyzer from the matching `25.06-py3-sdk` image against the same live `support_ensemble` server.
+## 3. Perf Analyzer is the server-capacity source
 
-Perf Analyzer is kept separate from the custom parity benchmark:
+The workflow runs NVIDIA Triton Perf Analyzer from the matching `25.06-py3-sdk` image against the same live `support_ensemble` server.
 
 ```text
-custom concurrent HTTP benchmark
-→ semantic parity + scheduler metric deltas
+custom concurrent HTTP
+→ semantic parity + HTTP correctness + scheduler metric deltas
 
-Perf Analyzer
-→ independent concurrency / latency / throughput measurement
+NVIDIA Triton Perf Analyzer
+→ optimized Triton client path + concurrency/latency/throughput measurement
 ```
 
-Agreement in trend is more useful than pretending two different measurement tools should return identical point estimates.
+Perf Analyzer CSV latency values are normalized from microseconds to milliseconds before policy evaluation.
+
+A passing hosted-CI reference run measured:
+
+| Concurrency | Inferences/s | p95 | p99 |
+|---:|---:|---:|---:|
+| 1 | 807 | 1.279 ms | 1.317 ms |
+| 4 | 2,801 | 1.545 ms | 1.637 ms |
+| 7 | 4,634 | 1.721 ms | 1.836 ms |
+| 10 | 7,554 | 1.796 ms | 2.070 ms |
+| 13 | 8,846 | 1.995 ms | 2.566 ms |
+| 16 | 9,425 | 2.391 ms | 3.296 ms |
+
+These values are reference measurements from a shared hosted runner, not production capacity guarantees.
 
 ## 4. Capacity decision
 
 `config/triton_capacity_policy.yaml` defines the reference SLO and safety rules.
 
-A scenario is SLO-passing only when all configured conditions pass:
+The custom path must first pass:
 
 ```text
 probability parity
-p95 latency
-p99 latency
-HTTP error rate
-maximum probability error
+HTTP correctness
+runtime dynamic batching evidence
 ```
 
-The highest-throughput SLO-passing point becomes the measured single-instance reference capacity.
+Perf Analyzer points are then filtered by the configured server latency objectives:
+
+```text
+p95 <= configured p95 SLO
+p99 <= configured p99 SLO
+throughput > 0
+```
+
+The highest-throughput SLO-passing Perf Analyzer point becomes the measured single-instance server reference capacity.
 
 ```text
 safe reference capacity per replica
-= measured SLO-passing rows/s
+= Perf Analyzer SLO-passing inferences/s
   × safety_headroom_fraction
 ```
 
-The reference replica count is then:
+The reference replica count is:
 
 ```text
 ceil(reference_target_rows_per_second
      / safe_reference_rows_per_second_per_replica)
 ```
 
-This calculation is deliberately blocked or downgraded when batching is ineffective, too few SLO-passing scenarios exist, or the target exceeds the configured replica boundary.
+The decision fails closed when semantic correctness fails, batching is ineffective, Perf Analyzer evidence is absent, too few server points pass the SLO, or the target exceeds the configured replica boundary.
 
-## 5. Why this is not a production capacity promise
+## 5. Why the custom client and Perf Analyzer should not match exactly
 
-The hosted-CI experiment is short and uses synthetic data, a shared GitHub runner, one CPU Triton instance, and a controlled request pattern.
+The custom benchmark intentionally performs native-model parity checks, JSON request construction, Python scheduling, and synchronized bursts. Perf Analyzer uses Triton-focused client optimizations and is designed for server performance measurement.
 
-It does not model all of the following:
+Therefore:
+
+```text
+custom client throughput
+≠ Triton server capacity
+```
+
+The custom path answers **"did the real serving path stay correct and batch requests?"** Perf Analyzer answers **"what latency/throughput envelope did this Triton server expose under the benchmark configuration?"**
+
+## 6. Capacity evidence report
+
+The CI workflow generates `capacity_report.html` with three separate evidence views:
+
+```text
+p95 latency vs concurrency
+throughput vs concurrency
+observed average backend batch size vs concurrency
+```
+
+It also records the selected capacity source, safety headroom, reference target, and replica recommendation.
+
+## 7. Why this is not a production capacity promise
+
+The hosted-CI experiment is short and uses synthetic data, a shared GitHub runner, one CPU Triton instance, and a controlled request pattern. It does not model:
 
 ```text
 production traffic arrival distribution
@@ -134,18 +169,16 @@ regional failover
 production cost
 ```
 
-Therefore the generated replica number is named a **reference recommendation**. Production sizing requires the same evidence process to be rerun in the target environment.
+The generated replica number is therefore a **reference recommendation**. Production sizing requires the same evidence process to be rerun in the target environment.
 
-## 6. Reproduce
-
-After generating the validated model and Triton repository:
+## 8. Reproduce
 
 ```bash
 make data features train triton
 make triton-capacity
 ```
 
-The workflow writes machine-readable and human-readable evidence under:
+The workflow writes:
 
 ```text
 reports/triton_capacity/
@@ -155,6 +188,7 @@ reports/triton_capacity/
 ├── triton_metrics_after_concurrency.prom
 ├── capacity_plan.json
 ├── capacity_plan.md
+├── capacity_report.html
 ├── triton_server.log
 ├── triton_container_inspect.json
 ├── triton_server_image_inspect.json
