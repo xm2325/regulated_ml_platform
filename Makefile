@@ -1,4 +1,4 @@
-.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton triton-runtime-cpu batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton triton-runtime-cpu triton-capacity batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -35,6 +35,8 @@ triton: triton-export triton-validate triton-parity triton-benchmark accelerator
 	python -m pip freeze | grep -E '^(onnx|onnxruntime|skl2onnx)==' > reports/onnx_toolchain_versions.txt
 triton-runtime-cpu:
 	bash scripts/triton_cpu_runtime_smoke.sh
+triton-capacity:
+	bash scripts/triton_capacity_smoke.sh
 batch:
 	python -m src.serving.batch_score --input data/raw/customers.csv --output reports/batch_predictions.csv
 load:
@@ -70,7 +72,7 @@ audit-registry-client:
 serve:
 	uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker:
-	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.1.0 .
+	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.2.0 .
 registry-up:
 	docker compose -f docker-compose.registry.yml up -d --build postgres minio minio-init mlflow
 registry-down:
