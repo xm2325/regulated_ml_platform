@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -170,6 +171,8 @@ def test_full_qualification_has_formal_duration_parity_and_telemetry_contracts()
         'export PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"',
         "python-source-provenance.txt",
         'env -u PYTHONOPTIMIZE PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"',
+        "qualification-entrypoint-help.txt",
+        "env -u PYTHONOPTIMIZE -u PYTHONPATH PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1",
         "APPTAINERENV_PYTHONSAFEPATH=1",
         'APPTAINERENV_PYTHONPATH="/work/source/${EXPECTED_TOP_LEVEL}/hpc/roihu"',
         "nvcc --version",
@@ -196,6 +199,24 @@ def test_http_client_enforces_formal_minima_and_same_fixture_parity():
     assert "binary_data=True" in client
     assert "policy_decision_mismatches" in client
     assert "maximum_absolute_probability_error" in client
+
+
+def test_http_client_loads_attested_sibling_without_pythonpath(tmp_path: Path):
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONSAFEPATH"] = "1"
+
+    completed = subprocess.run(
+        [sys.executable, str((ROIHU / "qualify_triton_http.py").resolve()), "--help"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Run same-input CPU and Triton HTTP qualification" in completed.stdout
 
 
 def test_finalizer_parses_completed_sacct_and_gpu_telemetry(tmp_path: Path):

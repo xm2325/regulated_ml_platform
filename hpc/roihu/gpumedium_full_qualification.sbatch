@@ -226,6 +226,10 @@ srun --ntasks=1 \
   python3 -c 'import sys; from pathlib import Path; import accelerator_workload; expected = Path(sys.argv[1]).resolve(strict=True); observed = Path(accelerator_workload.__file__).resolve(strict=True); valid = sys.flags.safe_path and "" not in sys.path and observed == expected; sys.exit("Python source provenance guard failed") if not valid else None; print(observed)' \
   "${SOURCE_ROOT}/hpc/roihu/accelerator_workload.py" \
   >"${EVIDENCE_DIR}/raw/python-source-provenance.txt"
+srun --ntasks=1 \
+  env -u PYTHONOPTIMIZE -u PYTHONPATH PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 \
+  python3 "${SOURCE_ROOT}/hpc/roihu/qualify_triton_http.py" --help \
+  >"${EVIDENCE_DIR}/raw/qualification-entrypoint-help.txt"
 
 python3 - "${EXPORT_MANIFEST_PATH}" "${EXPORT_MANIFEST_SHA256}" "${ONNX_PATH}" "${ONNX_SHA256}" \
   "${TRITON_CONFIG_PATH}" "${SOURCE_GIT_COMMIT}" "${EVIDENCE_DIR}/raw/input-validation.json" <<'PY'
@@ -340,7 +344,7 @@ export PYTHONHASHSEED=0
 export OMP_NUM_THREADS=72
 FIXTURE_DIR="${WORK_DIR}/fixtures"
 srun --ntasks=1 --cpu-bind=cores \
-  env -u PYTHONOPTIMIZE PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONPATH="${SOURCE_ROOT}/hpc/roihu" \
+  env -u PYTHONOPTIMIZE -u PYTHONPATH PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 \
   python3 "${SOURCE_ROOT}/hpc/roihu/qualify_triton_http.py" \
   --mode cpu \
   --output "${EVIDENCE_DIR}/raw/cpu-benchmark.json" \

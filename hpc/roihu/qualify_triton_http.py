@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -20,7 +21,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from accelerator_workload import MAX_BATCH_SIZE, build_model, make_input, percentile, workload_contract
+
+def _load_attested_workload_module() -> Any:
+    """Load the reviewed sibling module without relying on ``PYTHONPATH``.
+
+    The formal Slurm path extracts both files from a digest-verified archive.
+    Resolving the sibling from this script's own absolute path keeps that
+    provenance binding intact even when a job step sanitises its environment.
+    """
+
+    expected = Path(__file__).resolve(strict=True).with_name("accelerator_workload.py")
+    spec = importlib.util.spec_from_file_location("regulated_ml_roihu_accelerator_workload", expected)
+    if spec is None or spec.loader is None:
+        raise ImportError("unable to construct the accelerator workload module specification")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    observed = Path(module.__file__).resolve(strict=True)
+    if observed != expected:
+        raise ImportError("accelerator workload provenance mismatch")
+    return module
+
+
+_WORKLOAD = _load_attested_workload_module()
+MAX_BATCH_SIZE = _WORKLOAD.MAX_BATCH_SIZE
+build_model = _WORKLOAD.build_model
+make_input = _WORKLOAD.make_input
+percentile = _WORKLOAD.percentile
+workload_contract = _WORKLOAD.workload_contract
 
 SCHEMA_VERSION = "regulated-ml-platform.roihu-http-qualification/v1"
 
