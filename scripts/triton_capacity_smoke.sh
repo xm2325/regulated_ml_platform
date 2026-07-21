@@ -95,7 +95,6 @@ docker run --rm --network host \
     --measurement-interval=1000 \
     --stability-percentage=20 \
     --max-trials=5 \
-    --warmup-request-count=20 \
     --collect-metrics \
     --metrics-url="127.0.0.1:${TRITON_METRICS_PORT}/metrics" \
     --verbose-csv \
