@@ -1,3 +1,5 @@
+import types
+
 import src.operations.accelerator_policy as accelerator_policy
 import src.operations.gpu_autoscaling as gpu_autoscaling
 import src.serving.triton_export as triton_export
@@ -109,3 +111,24 @@ def test_triton_ensemble_preserves_calibration_stage():
     assert 'model_name: "support_calibrator"' in config
     assert "RAW_PROBABILITIES" in config
     assert "SUPPORT_PROBABILITY" in config
+
+
+def test_triton_ir_guard_rejects_model_newer_than_runtime_contract():
+    model = types.SimpleNamespace(ir_version=triton_export.TRITON_ONNX_MAX_IR_VERSION + 1)
+    try:
+        triton_export._require_triton_ir_compatibility(model, "test_model")
+    except ValueError as exc:
+        assert "exceeds the validated Triton runtime limit" in str(exc)
+    else:
+        raise AssertionError("Expected unsupported ONNX IR version to be rejected")
+
+
+def test_custom_calibrator_onnx_is_pinned_to_triton_compatible_ir(tmp_path):
+    import onnx
+
+    output = tmp_path / "calibrator.onnx"
+    exported_ir = triton_export._build_calibrator_onnx(1.0, 0.0, output)
+    model = onnx.load(output)
+    assert exported_ir == triton_export.TRITON_ONNX_MAX_IR_VERSION
+    assert int(model.ir_version) == triton_export.TRITON_ONNX_MAX_IR_VERSION
+    onnx.checker.check_model(model)
