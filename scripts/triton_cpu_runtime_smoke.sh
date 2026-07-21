@@ -11,7 +11,7 @@ mkdir -p "${OUT_DIR}"
 
 docker rm -f "${TRITON_NAME}" >/dev/null 2>&1 || true
 
-docker run -d --rm \
+docker run -d \
   --name "${TRITON_NAME}" \
   -p "${TRITON_HTTP_PORT}:8000" \
   -p "${TRITON_METRICS_PORT}:8002" \
@@ -24,8 +24,13 @@ docker run -d --rm \
     --allow-gpu-metrics=false \
     >"${OUT_DIR}/container_id.txt"
 
-cleanup() {
+capture_container_evidence() {
+  docker inspect "${TRITON_NAME}" >"${OUT_DIR}/triton_container_inspect.json" 2>/dev/null || true
   docker logs "${TRITON_NAME}" >"${OUT_DIR}/triton_server.log" 2>&1 || true
+}
+
+cleanup() {
+  capture_container_evidence
   docker rm -f "${TRITON_NAME}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -36,10 +41,19 @@ for _ in $(seq 1 120); do
     ready=1
     break
   fi
+  running="$(docker inspect -f '{{.State.Running}}' "${TRITON_NAME}" 2>/dev/null || echo false)"
+  if [[ "${running}" != "true" ]]; then
+    capture_container_evidence
+    echo "Triton container exited before becoming ready" >&2
+    cat "${OUT_DIR}/triton_server.log" >&2 || true
+    exit 1
+  fi
   sleep 2
 done
 if [[ "${ready}" != "1" ]]; then
+  capture_container_evidence
   echo "Triton did not become ready" >&2
+  cat "${OUT_DIR}/triton_server.log" >&2 || true
   exit 1
 fi
 
