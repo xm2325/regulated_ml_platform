@@ -5,4 +5,5 @@ LABEL org.opencontainers.image.source="https://github.com/xm2325/regulated_ml_pl
 COPY models/triton/model_repository /model-repository
 RUN test -s /model-repository/support_base/1/model.onnx \
     && test -s /model-repository/support_calibrator/1/model.onnx \
-    && test -s /model-repository/support_ensemble/config.pbtxt
+    && test -s /model-repository/support_ensemble/config.pbtxt \
+    && test -s /model-repository/support_ensemble/1/version.txt
