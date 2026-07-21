@@ -146,7 +146,7 @@ capacity policy → SLO filter + safety headroom + bounded replica reference</pr
 <div class="charts">
 {_chart('p95 latency', [('Custom semantic client', semantic_latency), ('Perf Analyzer', perf_latency)], 'milliseconds', [('p95 SLO', float(objectives.get('p95_latency_ms', 20.0)))])}
 {_chart('Throughput', [('Custom semantic client', semantic_throughput), ('Perf Analyzer', perf_throughput)], 'rows / inferences per second')}
-{_chart('Observed dynamic batch size', [('support_base average batch', average_batch)], 'average rows per backend execution', [('minimum effective batch', float(batching.get('minimum_required_gain', 1.25)))])}
+{_chart('Observed dynamic batch size', [('support_base average batch', average_batch)], 'average rows per backend execution', [('minimum batching gain', float(batching.get('minimum_required_gain', 1.25)))])}
 </div>
 <section><h2>Custom concurrent HTTP evidence</h2><table><thead><tr><th>Concurrency</th><th>p95 ms</th><th>p99 ms</th><th>Rows/s</th><th>Avg batch</th><th>Parity</th></tr></thead><tbody>{rows}</tbody></table></section>
 <section><h2>Boundary</h2><p>{html.escape(capacity.get('claim_boundary',{}).get('statement',''))}</p><p>The current validated tree ensemble remains CPU_ONLY. This report is not a production capacity or GPU performance claim.</p></section>
