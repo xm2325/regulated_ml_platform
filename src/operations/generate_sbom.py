@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, metadata, version
 from pathlib import Path
 
+from src.core.config import ServiceSettings
+
 DIRECT_PACKAGES = ["fastapi", "uvicorn", "pydantic", "numpy", "pandas", "scikit-learn", "joblib", "prometheus-client", "PyYAML"]
 
 
-def build_sbom(packages: list[str] | None = None) -> dict[str, object]:
+def build_sbom(packages: list[str] | None = None, application_version: str | None = None) -> dict[str, object]:
     components = []
     for package in packages or DIRECT_PACKAGES:
         try:
@@ -24,7 +26,8 @@ def build_sbom(packages: list[str] | None = None) -> dict[str, object]:
             component["licenses"] = [{"license": {"name": license_expression}}]
         components.append(component)
     components.sort(key=lambda item: str(item["name"]).lower())
-    return {"bomFormat": "CycloneDX", "specVersion": "1.5", "serialNumber": f"urn:uuid:{uuid.uuid4()}", "version": 1, "metadata": {"timestamp": datetime.now(timezone.utc).isoformat(), "component": {"type": "application", "name": "regulated-ai-mlops-platform", "version": "0.6.0"}, "tools": {"components": [{"type": "application", "name": "stdlib-importlib-metadata-sbom", "version": "1"}]}}, "components": components}
+    platform_version = application_version or ServiceSettings().platform_version
+    return {"bomFormat": "CycloneDX", "specVersion": "1.5", "serialNumber": f"urn:uuid:{uuid.uuid4()}", "version": 1, "metadata": {"timestamp": datetime.now(timezone.utc).isoformat(), "component": {"type": "application", "name": "regulated-ai-mlops-platform", "version": platform_version}, "tools": {"components": [{"type": "application", "name": "stdlib-importlib-metadata-sbom", "version": "1"}]}}, "components": components}
 
 
 def main() -> None:

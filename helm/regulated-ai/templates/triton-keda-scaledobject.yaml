@@ -1,0 +1,103 @@
+{{- if and .Values.tritonServing.enabled .Values.tritonServing.kedaAutoscaling.enabled }}
+{{- $autoscaling := .Values.tritonServing.kedaAutoscaling }}
+{{- $evidence := .Values.tritonServing.gpuProductionEvidence }}
+{{- if ne .Values.tritonServing.accelerator "gpu" }}
+{{- fail "Triton KEDA autoscaling requires tritonServing.accelerator=gpu" }}
+{{- end }}
+{{- if not .Values.tritonServing.gpuEvidenceApproved }}
+{{- fail "Triton KEDA autoscaling requires gpuEvidenceApproved=true" }}
+{{- end }}
+{{- if ne .Values.tritonServing.gpu.resourceName "nvidia.com/gpu" }}
+{{- fail "Triton GH200 production controls require gpu.resourceName=nvidia.com/gpu" }}
+{{- end }}
+{{- if ne $evidence.acceleratorDecision "GPU_ELIGIBLE" }}
+{{- fail "Triton KEDA autoscaling requires acceleratorDecision=GPU_ELIGIBLE" }}
+{{- end }}
+{{- if ne $evidence.runtimeEvidence "real_gpu" }}
+{{- fail "Triton KEDA autoscaling requires runtimeEvidence=real_gpu" }}
+{{- end }}
+{{- $scheduledAccelerator := default "" (index .Values.tritonServing.gpu.nodeSelector "accelerator") }}
+{{- if or (eq $evidence.acceleratorProduct "") (eq $evidence.acceleratorProduct "unverified") }}
+{{- fail "Triton KEDA autoscaling requires a verified acceleratorProduct" }}
+{{- end }}
+{{- if ne $evidence.acceleratorProduct $scheduledAccelerator }}
+{{- fail "Triton KEDA autoscaling requires acceleratorProduct to match tritonServing.gpu.nodeSelector.accelerator" }}
+{{- end }}
+{{- if not (regexMatch "^[a-fA-F0-9]{64}$" $evidence.reportSha256) }}
+{{- fail "Triton KEDA autoscaling requires a 64-character evidence reportSha256" }}
+{{- end }}
+{{- if or (eq $evidence.clusterProfile "") (eq $evidence.clusterProfile "unverified") }}
+{{- fail "Triton KEDA autoscaling requires a verified clusterProfile" }}
+{{- end }}
+{{- $minReplicas := int $autoscaling.minReplicaCount }}
+{{- $maxReplicas := int $autoscaling.maxReplicaCount }}
+{{- if lt $minReplicas 2 }}
+{{- fail "Triton KEDA autoscaling requires minReplicaCount >= 2 for production availability" }}
+{{- end }}
+{{- if le $maxReplicas $minReplicas }}
+{{- fail "Triton KEDA autoscaling requires maxReplicaCount > minReplicaCount" }}
+{{- end }}
+{{- if lt (int $autoscaling.behavior.scaleDown.stabilizationWindowSeconds) (int $autoscaling.cooldownPeriod) }}
+{{- fail "Triton KEDA scale-down stabilization must be at least cooldownPeriod" }}
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+  annotations:
+    regulated-ai/gpu-evidence-sha256: {{ $evidence.reportSha256 | quote }}
+    regulated-ai/cluster-profile: {{ $evidence.clusterProfile | quote }}
+    regulated-ai/accelerator-product: {{ $evidence.acceleratorProduct | quote }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: regulated-ai-triton
+  pollingInterval: {{ $autoscaling.pollingInterval }}
+  initialCooldownPeriod: {{ $autoscaling.initialCooldownPeriod }}
+  cooldownPeriod: {{ $autoscaling.cooldownPeriod }}
+  minReplicaCount: {{ $minReplicas }}
+  maxReplicaCount: {{ $maxReplicas }}
+  fallback:
+    failureThreshold: {{ $autoscaling.fallback.failureThreshold }}
+    replicas: {{ $autoscaling.fallback.replicas }}
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: {{ $autoscaling.behavior.scaleUp.stabilizationWindowSeconds }}
+          policies:
+            - type: Pods
+              value: {{ $autoscaling.behavior.scaleUp.maxPods }}
+              periodSeconds: {{ $autoscaling.behavior.scaleUp.periodSeconds }}
+        scaleDown:
+          stabilizationWindowSeconds: {{ $autoscaling.behavior.scaleDown.stabilizationWindowSeconds }}
+          selectPolicy: Min
+          policies:
+            - type: Percent
+              value: {{ $autoscaling.behavior.scaleDown.maxPercent }}
+              periodSeconds: {{ $autoscaling.behavior.scaleDown.periodSeconds }}
+  triggers:
+    - type: prometheus
+      metricType: AverageValue
+      metadata:
+        serverAddress: {{ $autoscaling.prometheus.serverAddress | quote }}
+        metricName: regulated_ai_triton_queue_time_ms_per_request
+        query: >-
+          sum(rate(nv_inference_queue_duration_us{service="regulated-ai-triton"}[{{ $autoscaling.prometheus.queryWindow }}]))
+          / clamp_min(sum(rate(nv_inference_request_success{service="regulated-ai-triton"}[{{ $autoscaling.prometheus.queryWindow }}])), 1)
+          / 1000
+        threshold: {{ $autoscaling.prometheus.queueTime.thresholdMs | quote }}
+        activationThreshold: {{ $autoscaling.prometheus.queueTime.activationThresholdMs | quote }}
+    - type: prometheus
+      metricType: AverageValue
+      metadata:
+        serverAddress: {{ $autoscaling.prometheus.serverAddress | quote }}
+        metricName: regulated_ai_triton_gpu_utilization
+        query: avg(nv_gpu_utilization{service="regulated-ai-triton"})
+        threshold: {{ $autoscaling.prometheus.gpuUtilization.threshold | quote }}
+        activationThreshold: {{ $autoscaling.prometheus.gpuUtilization.activationThreshold | quote }}
+{{- end }}

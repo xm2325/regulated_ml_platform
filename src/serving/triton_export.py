@@ -14,7 +14,7 @@ from src.features.build_features import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 
 TRITON_ONNX_MAX_IR_VERSION = 10
 ONNX_TARGET_OPSET = 18
-PLATFORM_VERSION = "1.2.0"
+PLATFORM_VERSION = "1.3.0"
 
 
 def _sha256(path: Path) -> str:

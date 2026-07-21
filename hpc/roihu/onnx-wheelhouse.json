@@ -1,0 +1,36 @@
+{
+  "schema_version": "regulated-ml-platform.roihu-python-wheelhouse/v1",
+  "python_version": "3.12",
+  "python_cache_tag": "cpython-312",
+  "platform_machine": "aarch64",
+  "base_module": "python-pytorch/2.10",
+  "packages": [
+    {
+      "name": "onnx",
+      "import_name": "onnx",
+      "version": "1.22.0",
+      "filename": "onnx-1.22.0-cp312-abi3-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16",
+      "source": "https://pypi.org/project/onnx/1.22.0/"
+    },
+    {
+      "name": "protobuf",
+      "import_name": "google.protobuf",
+      "version": "5.29.6",
+      "filename": "protobuf-5.29.6-cp38-abi3-manylinux2014_aarch64.whl",
+      "sha256": "a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6",
+      "source": "https://pypi.org/project/protobuf/5.29.6/"
+    }
+  ],
+  "runtime_contract": {
+    "dependencies_provided_by_base_module": [
+      "numpy",
+      "typing_extensions",
+      "ml_dtypes"
+    ],
+    "install_dependencies": false,
+    "network_allowed_in_batch_job": false,
+    "installation_target": "node-local-tmpdir",
+    "check_scope": "onnx-direct-dependencies-and-imports"
+  }
+}

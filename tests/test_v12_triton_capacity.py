@@ -4,7 +4,7 @@ from src.operations.triton_capacity_plan import _normalize_perf_row, build_capac
 
 def _policy():
     return {
-        "platform_version": "1.2.0",
+        "platform_version": "1.3.0",
         "service_objectives": {
             "p95_latency_ms": 20.0,
             "p99_latency_ms": 35.0,

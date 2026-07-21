@@ -1,0 +1,24 @@
+{{- if and .Values.tritonServing.enabled .Values.tritonServing.productionControls.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+{{- with .Values.tritonServing.productionControls.serviceMonitor.additionalLabels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  selector:
+    matchLabels:
+      app: regulated-ai-triton
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace | quote }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.tritonServing.productionControls.serviceMonitor.interval | quote }}
+      scrapeTimeout: {{ .Values.tritonServing.productionControls.serviceMonitor.scrapeTimeout | quote }}
+      scheme: http
+{{- end }}

@@ -1,86 +1,226 @@
-name: Triton runtime evidence on self-hosted GPU
+name: Roihu GH200 evidence contract (no GPU runtime)
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/triton-gpu-evidence.yml"
+      - ".github/workflows/platform.yml"
+      - "config/roihu_gpu_evidence_policy.yaml"
+      - "docs/roihu_gpu_evidence.md"
+      - "hpc/roihu/**"
+      - "helm/regulated-ai/**"
+      - "scripts/prepare_roihu_source_bundle.sh"
+      - "src/operations/roihu_gpu_evidence.py"
+      - "tests/test_v13_gpu_platform.py"
+      - "tests/test_v13_gpu_workflow.py"
+      - "tests/test_v13_roihu_bundle.py"
+      - "tests/test_v13_roihu_gpu_evidence.py"
+      - "tests/test_v13_roihu_runtime.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/triton-gpu-evidence.yml"
+      - ".github/workflows/platform.yml"
+      - "config/roihu_gpu_evidence_policy.yaml"
+      - "docs/roihu_gpu_evidence.md"
+      - "hpc/roihu/**"
+      - "helm/regulated-ai/**"
+      - "scripts/prepare_roihu_source_bundle.sh"
+      - "src/operations/roihu_gpu_evidence.py"
+      - "tests/test_v13_gpu_platform.py"
+      - "tests/test_v13_gpu_workflow.py"
+      - "tests/test_v13_roihu_bundle.py"
+      - "tests/test_v13_roihu_gpu_evidence.py"
+      - "tests/test_v13_roihu_runtime.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: roihu-gpu-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  triton-runtime-evidence:
-    runs-on: [self-hosted, linux, x64, gpu]
-    timeout-minutes: 60
+  contract-and-validator:
+    # GitHub-hosted CPU runner only. Real GPU evidence must originate from CSC
+    # Roihu Slurm; this job neither executes nor proves a real GPU workload.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Install build and validation dependencies
+          python-version: "3.12"
+          cache: pip
+      - name: Install contract validation dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt -r requirements-onnx.txt
-      - name: Verify NVIDIA runtime exists
+          python -m pip install -r requirements-dev.txt
+      - name: Lint Roihu contracts and shell entrypoints
         run: |
           set -euo pipefail
-          nvidia-smi
-          docker info
-      - name: Build validated model and Triton repository
-        run: make data features train triton
-      - name: Assert accelerator policy for current model before runtime
-        run: |
-          python - <<'PY'
-          import json
-          report = json.load(open("reports/accelerator_decision.json"))
-          print(json.dumps(report, indent=2))
-          if report["decision"] != "CPU_ONLY":
-              raise SystemExit("Current reference champion is expected to remain CPU_ONLY until real GPU benchmark evidence exists")
-          PY
-      - name: Run real Triton server on the GPU-capable host without claiming GPU model acceleration
-        shell: bash
+          ruff check \
+            src/operations/roihu_gpu_evidence.py \
+            hpc/roihu \
+            tests/test_v13_gpu_platform.py \
+            tests/test_v13_gpu_workflow.py \
+            tests/test_v13_roihu_bundle.py \
+            tests/test_v13_roihu_gpu_evidence.py \
+            tests/test_v13_roihu_runtime.py
+          ruff format --check \
+            src/operations/roihu_gpu_evidence.py \
+            tests/test_v13_gpu_platform.py \
+            tests/test_v13_gpu_workflow.py \
+            tests/test_v13_roihu_bundle.py \
+            tests/test_v13_roihu_gpu_evidence.py \
+            tests/test_v13_roihu_runtime.py
+          bash -n scripts/prepare_roihu_source_bundle.sh
+          bash -n hpc/roihu/prepare_onnx_wheelhouse.sh
+          find hpc/roihu -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+          find hpc/roihu -type f -name '*.sbatch' -print0 | xargs -0 -r -n1 bash -n
+      - name: Validate v1.3 evidence policy and fail-closed CLI contract
         run: |
           set -euo pipefail
-          docker run -d --rm --name regulated-ai-triton \
-            --gpus all \
-            -p 18000:8000 -p 18002:8002 \
-            -v "$PWD/models/triton/model_repository:/models:ro" \
-            nvcr.io/nvidia/tritonserver:25.06-py3 \
-            tritonserver --model-repository=/models --strict-model-config=true --allow-metrics=true --allow-gpu-metrics=true
-          trap 'docker logs regulated-ai-triton || true; docker stop regulated-ai-triton || true' EXIT
-          for _ in {1..90}; do
-            if curl --fail --silent http://127.0.0.1:18000/v2/health/ready; then
-              break
-            fi
-            sleep 2
-          done
-          curl --fail --silent http://127.0.0.1:18000/v2/health/ready
-          python -m src.operations.benchmark_triton_http \
-            --triton-url http://127.0.0.1:18000 \
-            --output reports/triton_http_benchmark.json
-          curl --fail --silent http://127.0.0.1:18002/metrics > reports/triton_metrics.prom
-          grep -q 'nv_inference_' reports/triton_metrics.prom
-          grep -q 'nv_gpu_' reports/triton_metrics.prom
-          python - <<'PY'
+          python -m src.operations.roihu_gpu_evidence --help
+          python -m pytest -q \
+            tests/test_v13_gpu_platform.py \
+            tests/test_v13_gpu_workflow.py \
+            tests/test_v13_roihu_bundle.py \
+            tests/test_v13_roihu_gpu_evidence.py \
+            tests/test_v13_roihu_runtime.py
+      - name: Build immutable source-bundle contract
+        run: |
+          set -euo pipefail
+          bash scripts/prepare_roihu_source_bundle.sh "${RUNNER_TEMP}/roihu-source"
+          cd "${RUNNER_TEMP}/roihu-source"
+          sha256sum --check regulated-ml-platform-*.tar.gz.sha256
+      - name: Verify pinned Roihu ARM64 Python wheelhouse contract
+        env:
+          PIP_CONFIG_FILE: /dev/null
+        run: |
+          set -euo pipefail
+          wheelhouse="${RUNNER_TEMP}/roihu-arm64-wheelhouse"
+          mkdir -p "${wheelhouse}"
+          python -m pip download \
+            --disable-pip-version-check \
+            --index-url https://pypi.org/simple \
+            --no-deps \
+            --no-cache-dir \
+            --only-binary=:all: \
+            --platform manylinux_2_28_aarch64 \
+            --platform manylinux2014_aarch64 \
+            --python-version 3.12 \
+            --implementation cp \
+            --abi abi3 \
+            --require-hashes \
+            --dest "${wheelhouse}" \
+            --requirement hpc/roihu/requirements-onnx.lock
+          cp hpc/roihu/onnx-wheelhouse.json "${wheelhouse}/"
+          cp hpc/roihu/requirements-onnx.lock "${wheelhouse}/"
+          cd "${wheelhouse}"
+          {
+            printf '%s  %s\n' \
+              'ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16' \
+              'onnx-1.22.0-cp312-abi3-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl'
+            printf '%s  %s\n' \
+              'a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6' \
+              'protobuf-5.29.6-cp38-abi3-manylinux2014_aarch64.whl'
+          } > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Audit exact Roihu wheelhouse package versions
+        env:
+          PIP_CONFIG_FILE: /dev/null
+        run: |
+          set -euo pipefail
+          audit_dir="${RUNNER_TEMP}/roihu-wheelhouse-audit"
+          mkdir -p "${audit_dir}"
+          python - "${audit_dir}" <<'PY'
+          from __future__ import annotations
+
           import json
+          import re
+          import sys
+          import urllib.request
           from pathlib import Path
-          evidence = {
-              "runtime_evidence": "real_triton_server_on_gpu_capable_host",
-              "current_model_accelerator": "cpu",
-              "gpu_host_present": True,
-              "gpu_metrics_endpoint_present": True,
-              "gpu_acceleration_claim": False,
-              "reason": "The validated champion is a tree ensemble and the accelerator policy remains CPU_ONLY without a separate approved GPU-compatible benchmark.",
+
+          destination = Path(sys.argv[1])
+          contract = json.loads(Path("hpc/roihu/onnx-wheelhouse.json").read_text(encoding="utf-8"))
+          packages = contract["packages"]
+          requirements = []
+          release_checks = []
+          for package in packages:
+              name = package["name"]
+              version = package["version"]
+              if not re.fullmatch(r"[a-z0-9_-]+", name) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", version):
+                  raise SystemExit("wheelhouse contract contains an unsafe package coordinate")
+              requirements.append(f"{name}=={version}")
+              url = f"https://pypi.org/pypi/{name}/{version}/json"
+              with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - fixed PyPI origin
+                  metadata = json.load(response)
+              vulnerabilities = metadata.get("vulnerabilities", [])
+              release_checks.append({
+                  "name": name,
+                  "version": version,
+                  "release_url": metadata.get("info", {}).get("release_url"),
+                  "vulnerabilities": vulnerabilities,
+                  "status": "PASS" if not vulnerabilities else "FAIL",
+              })
+          (destination / "requirements-audit.txt").write_text("\n".join(requirements) + "\n", encoding="utf-8")
+          report = {
+              "schema_version": "regulated-ml-platform.roihu-pypi-release-audit/v1",
+              "status": "PASS" if all(item["status"] == "PASS" for item in release_checks) else "FAIL",
+              "packages": release_checks,
           }
-          Path("reports/triton_runtime_boundary.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+          (destination / "pypi-release-audit.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          if report["status"] != "PASS":
+              raise SystemExit("PyPI reports a vulnerability for a pinned Roihu package release")
           PY
-      - name: Upload real runtime evidence
-        if: always()
+          python -m pip_audit \
+            --strict \
+            --no-deps \
+            --disable-pip \
+            --requirement "${audit_dir}/requirements-audit.txt" \
+            --format json \
+            --output "${audit_dir}/pip-audit.json"
+      - name: Record GitHub-hosted claim boundary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "schema_version": "regulated-ml-platform.github-gpu-contract/v1",
+              "source_commit": os.environ["SOURCE_SHA"],
+              "runner_scope": "github-hosted-contract-validation-only",
+              "executes_roihu_slurm_job": False,
+              "executes_gpu_workload": False,
+              "proves_real_gpu": False,
+              "accepted_real_evidence_origin": "CSC Roihu Slurm gpumedium/gpularge",
+          }
+          destination = Path(os.environ["RUNNER_TEMP"]) / "roihu-source" / "github-claim-boundary.json"
+          destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+      - name: Upload staging contracts (not GPU evidence)
         uses: actions/upload-artifact@v4
         with:
-          name: triton-self-hosted-runtime-evidence
+          name: roihu-staging-contracts-not-gpu-evidence-${{ env.SOURCE_SHA }}
           path: |
-            reports/triton_http_benchmark.json
-            reports/triton_metrics.prom
-            reports/triton_runtime_boundary.json
-            reports/accelerator_decision.json
-            models/triton/contract.json
+            ${{ runner.temp }}/roihu-source/
+            ${{ runner.temp }}/roihu-arm64-wheelhouse/
+            ${{ runner.temp }}/roihu-wheelhouse-audit/
+          if-no-files-found: error
           retention-days: 14

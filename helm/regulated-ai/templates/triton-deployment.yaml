@@ -5,12 +5,43 @@
 {{- if and (eq .Values.tritonServing.accelerator "gpu") (not (has .Values.tritonServing.modelFamily .Values.tritonServing.gpuEligibleModelFamilies)) }}
 {{- fail "tritonServing accelerator=gpu is not allowed for the configured modelFamily without an approved GPU-compatible model contract" }}
 {{- end }}
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+{{- $evidence := .Values.tritonServing.gpuProductionEvidence }}
+{{- if ne .Values.tritonServing.gpu.resourceName "nvidia.com/gpu" }}
+{{- fail "Triton GPU deployment requires gpu.resourceName=nvidia.com/gpu" }}
+{{- end }}
+{{- if ne $evidence.acceleratorDecision "GPU_ELIGIBLE" }}
+{{- fail "Triton GPU deployment requires acceleratorDecision=GPU_ELIGIBLE" }}
+{{- end }}
+{{- if ne $evidence.runtimeEvidence "real_gpu" }}
+{{- fail "Triton GPU deployment requires runtimeEvidence=real_gpu" }}
+{{- end }}
+{{- $scheduledAccelerator := default "" (index .Values.tritonServing.gpu.nodeSelector "accelerator") }}
+{{- if or (eq $evidence.acceleratorProduct "") (eq $evidence.acceleratorProduct "unverified") }}
+{{- fail "Triton GPU deployment requires a verified acceleratorProduct" }}
+{{- end }}
+{{- if ne $evidence.acceleratorProduct $scheduledAccelerator }}
+{{- fail "Triton GPU deployment requires acceleratorProduct to match tritonServing.gpu.nodeSelector.accelerator" }}
+{{- end }}
+{{- if not (regexMatch "^[a-fA-F0-9]{64}$" $evidence.reportSha256) }}
+{{- fail "Triton GPU deployment requires a 64-character evidence reportSha256" }}
+{{- end }}
+{{- if or (eq $evidence.clusterProfile "") (eq $evidence.clusterProfile "unverified") }}
+{{- fail "Triton GPU deployment requires a verified clusterProfile" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: regulated-ai-triton
   labels:
     app: regulated-ai-triton
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+  annotations:
+    regulated-ai/gpu-evidence-sha256: {{ .Values.tritonServing.gpuProductionEvidence.reportSha256 | quote }}
+    regulated-ai/cluster-profile: {{ .Values.tritonServing.gpuProductionEvidence.clusterProfile | quote }}
+    regulated-ai/accelerator-product: {{ .Values.tritonServing.gpuProductionEvidence.acceleratorProduct | quote }}
+{{- end }}
 spec:
   replicas: {{ .Values.tritonServing.replicas }}
   strategy:
@@ -29,6 +60,11 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: {{ .Values.tritonServing.service.metricsPort | quote }}
+{{- if eq .Values.tritonServing.accelerator "gpu" }}
+        regulated-ai/gpu-evidence-sha256: {{ .Values.tritonServing.gpuProductionEvidence.reportSha256 | quote }}
+        regulated-ai/cluster-profile: {{ .Values.tritonServing.gpuProductionEvidence.clusterProfile | quote }}
+        regulated-ai/accelerator-product: {{ .Values.tritonServing.gpuProductionEvidence.acceleratorProduct | quote }}
+{{- end }}
     spec:
       priorityClassName: {{ .Values.tritonServing.priorityClassName | quote }}
 {{- if eq .Values.tritonServing.accelerator "gpu" }}

@@ -1,4 +1,6 @@
-.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton triton-runtime-cpu triton-capacity batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+.PHONY: data features train reports continuous alerts contract triton-export triton-validate triton-parity triton-benchmark accelerator triton triton-runtime-cpu triton-capacity roihu-contract roihu-source-bundle roihu-gpu-evidence batch load deployment incident openapi manifest approval site test lint security audit audit-onnx audit-registry audit-registry-client sbom serve docker evidence ci all registry-up registry-down registry-register registry-promote registry-rollback registry-status registry-verify registry-smoke
+
+ROIHU_BUNDLE_DIR ?= dist/roihu-source
 
 data:
 	python -m src.data.make_dataset --n 5000 --output data/raw/customers.csv --seed 42
@@ -37,6 +39,21 @@ triton-runtime-cpu:
 	bash scripts/triton_cpu_runtime_smoke.sh
 triton-capacity:
 	bash scripts/triton_capacity_smoke.sh
+roihu-contract:
+	python -m pytest -q tests/test_v13_roihu_gpu_evidence.py tests/test_v13_roihu_bundle.py tests/test_v13_roihu_runtime.py tests/test_v13_gpu_platform.py tests/test_v13_gpu_workflow.py
+	bash -n scripts/prepare_roihu_source_bundle.sh
+	for script in hpc/roihu/*.sbatch; do bash -n "$$script"; done
+roihu-source-bundle:
+	bash scripts/prepare_roihu_source_bundle.sh "$(ROIHU_BUNDLE_DIR)"
+roihu-gpu-evidence:
+	test -n "$(ROIHU_EVIDENCE_ROOT)"
+	python -m src.operations.roihu_gpu_evidence \
+		--manifest "$(ROIHU_EVIDENCE_ROOT)/manifest.json" \
+		--benchmark "$(ROIHU_EVIDENCE_ROOT)/benchmark.json" \
+		--policy config/roihu_gpu_evidence_policy.yaml \
+		--checksums "$(ROIHU_EVIDENCE_ROOT)/SHA256SUMS" \
+		--artifact-root "$(ROIHU_EVIDENCE_ROOT)" \
+		--output "$(ROIHU_EVIDENCE_ROOT)/decision.json"
 batch:
 	python -m src.serving.batch_score --input data/raw/customers.csv --output reports/batch_predictions.csv
 load:
@@ -72,7 +89,7 @@ audit-registry-client:
 serve:
 	uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 docker:
-	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.2.0 .
+	docker build -f docker/Dockerfile -t regulated-ai-mlops-platform:1.3.0 .
 registry-up:
 	docker compose -f docker-compose.registry.yml up -d --build postgres minio minio-init mlflow
 registry-down:

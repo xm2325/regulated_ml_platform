@@ -1,0 +1,21 @@
+{{- if and .Values.tritonServing.enabled .Values.tritonServing.productionControls.podDisruptionBudget.enabled }}
+{{- $replicas := int .Values.tritonServing.replicas }}
+{{- $minAvailable := int .Values.tritonServing.productionControls.podDisruptionBudget.minAvailable }}
+{{- if lt $replicas 2 }}
+{{- fail "Triton PodDisruptionBudget requires tritonServing.replicas >= 2" }}
+{{- end }}
+{{- if ge $minAvailable $replicas }}
+{{- fail "Triton PodDisruptionBudget minAvailable must be lower than tritonServing.replicas" }}
+{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: regulated-ai-triton
+  labels:
+    app: regulated-ai-triton
+spec:
+  minAvailable: {{ $minAvailable }}
+  selector:
+    matchLabels:
+      app: regulated-ai-triton
+{{- end }}

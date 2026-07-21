@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/xm2325/regulated_ml_platform
-  tag: "service-1.1.0"
+  tag: "service-1.3.0"
   digest: ""
   pullPolicy: IfNotPresent
 replicaCount: 2
@@ -126,7 +126,7 @@ tritonServing:
     pullPolicy: IfNotPresent
   modelRepositoryImage:
     repository: ghcr.io/xm2325/regulated_ml_platform-triton-models
-    tag: "model-0.6.0-serving-1.1.0"
+    tag: "model-0.6.0-serving-1.3.0"
     digest: ""
     pullPolicy: IfNotPresent
   modelFamily: tree_ensemble
@@ -155,3 +155,75 @@ tritonServing:
     httpPort: 8000
     grpcPort: 8001
     metricsPort: 8002
+  productionControls:
+    podDisruptionBudget:
+      enabled: false
+      minAvailable: 1
+    networkPolicy:
+      enabled: false
+      applicationIngress:
+        enabled: true
+      monitoringIngress:
+        enabled: true
+        namespace: monitoring
+        podLabels:
+          app.kubernetes.io/name: prometheus
+      dnsEgress:
+        enabled: true
+        namespace: kube-system
+        podLabels:
+          k8s-app: kube-dns
+    gpuResourceQuota:
+      enabled: false
+      hardGpuCount: 8
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      scrapeTimeout: 10s
+      additionalLabels: {}
+    prometheusRule:
+      enabled: false
+      additionalLabels: {}
+      readiness:
+        for: 5m
+      queueTime:
+        thresholdMs: 8.0
+        for: 10m
+      gpuUtilization:
+        lowerBound: 0.35
+        upperBound: 0.90
+        for: 15m
+  gpuProductionEvidence:
+    acceleratorDecision: NOT_EVALUATED
+    runtimeEvidence: contract_only
+    acceleratorProduct: unverified
+    reportSha256: ""
+    clusterProfile: unverified
+  kedaAutoscaling:
+    enabled: false
+    pollingInterval: 30
+    initialCooldownPeriod: 120
+    cooldownPeriod: 600
+    minReplicaCount: 2
+    maxReplicaCount: 8
+    fallback:
+      failureThreshold: 3
+      replicas: 2
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 120
+        periodSeconds: 60
+        maxPods: 1
+      scaleDown:
+        stabilizationWindowSeconds: 600
+        periodSeconds: 120
+        maxPercent: 25
+    prometheus:
+      serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+      queryWindow: 2m
+      queueTime:
+        thresholdMs: 8.0
+        activationThresholdMs: 1.0
+      gpuUtilization:
+        threshold: 0.85
+        activationThreshold: 0.35
