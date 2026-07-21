@@ -1,0 +1,66 @@
+name: Triton CPU runtime parity and batching evidence
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: triton-cpu-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRITON_IMAGE: nvcr.io/nvidia/tritonserver:25.06-py3
+
+jobs:
+  triton-cpu-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements-runtime.lock
+            requirements-dev.txt
+            requirements-onnx.txt
+      - name: Install model, test, and ONNX dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt -r requirements-onnx.txt
+      - name: Build validated model and Triton repository
+        run: make data features train triton
+      - name: Pull and record the resolved Triton server image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/triton_cpu_runtime
+          docker pull "${TRITON_IMAGE}"
+          docker image inspect "${TRITON_IMAGE}" > reports/triton_cpu_runtime/triton_server_image_inspect.json
+      - name: Run real Triton CPU server, parity, batching, and metrics drill
+        run: bash scripts/triton_cpu_runtime_smoke.sh
+      - name: Prove runtime evidence is CPU-only and passing
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open("reports/triton_cpu_runtime/runtime_evidence.json"))
+          assert report["status"] == "PASS", report
+          assert report["runtime_evidence"] == "real_triton_cpu_hosted_ci"
+          assert report["accelerator"] == "cpu"
+          assert report["gpu_runtime_claim"] is False
+          assert all(report["checks"].values()), report
+          print(json.dumps(report, indent=2))
+          PY
+      - name: Upload real Triton CPU runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: triton-cpu-runtime-evidence
+          path: reports/triton_cpu_runtime/
+          retention-days: 14
