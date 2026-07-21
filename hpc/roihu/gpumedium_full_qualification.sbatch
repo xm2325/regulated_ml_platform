@@ -111,7 +111,7 @@ module --force purge
 module load python-pytorch/2.10
 export PYTHONNOUSERSITE=1
 export PYTHONSAFEPATH=1
-unset PYTHONPATH PYTHONHOME
+unset PYTHONPATH PYTHONHOME PYTHONOPTIMIZE
 module -t list 2>"${EVIDENCE_DIR}/raw/module-list.txt"
 command -v apptainer >/dev/null 2>&1 || fail "Apptainer is unavailable"
 [[ "$(uname -m)" == "aarch64" ]] || fail "formal target-side qualification requires Roihu-GPU aarch64"
@@ -209,6 +209,7 @@ if top != {expected}:
     raise SystemExit("source root does not attest the requested full commit")
 root = destination / expected
 required = [
+    root / "hpc/roihu/accelerator_workload.py",
     root / "hpc/roihu/qualify_triton_http.py",
     root / "hpc/roihu/finalize_roihu_qualification.py",
     root / "src/operations/roihu_gpu_evidence.py",
@@ -220,6 +221,11 @@ print(root)
 PY
 )"
 export PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"
+srun --ntasks=1 \
+  env -u PYTHONOPTIMIZE PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONPATH="${SOURCE_ROOT}/hpc/roihu" \
+  python3 -c 'import sys; from pathlib import Path; import accelerator_workload; expected = Path(sys.argv[1]).resolve(strict=True); observed = Path(accelerator_workload.__file__).resolve(strict=True); valid = sys.flags.safe_path and "" not in sys.path and observed == expected; sys.exit("Python source provenance guard failed") if not valid else None; print(observed)' \
+  "${SOURCE_ROOT}/hpc/roihu/accelerator_workload.py" \
+  >"${EVIDENCE_DIR}/raw/python-source-provenance.txt"
 
 python3 - "${EXPORT_MANIFEST_PATH}" "${EXPORT_MANIFEST_SHA256}" "${ONNX_PATH}" "${ONNX_SHA256}" \
   "${TRITON_CONFIG_PATH}" "${SOURCE_GIT_COMMIT}" "${EVIDENCE_DIR}/raw/input-validation.json" <<'PY'
@@ -333,7 +339,9 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 export PYTHONHASHSEED=0
 export OMP_NUM_THREADS=72
 FIXTURE_DIR="${WORK_DIR}/fixtures"
-srun --ntasks=1 --cpu-bind=cores python3 "${SOURCE_ROOT}/hpc/roihu/qualify_triton_http.py" \
+srun --ntasks=1 --cpu-bind=cores \
+  env -u PYTHONOPTIMIZE PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONPATH="${SOURCE_ROOT}/hpc/roihu" \
+  python3 "${SOURCE_ROOT}/hpc/roihu/qualify_triton_http.py" \
   --mode cpu \
   --output "${EVIDENCE_DIR}/raw/cpu-benchmark.json" \
   --fixture-dir "${FIXTURE_DIR}" \

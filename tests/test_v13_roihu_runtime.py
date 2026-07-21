@@ -166,8 +166,10 @@ def test_full_qualification_has_formal_duration_parity_and_telemetry_contracts()
         "CSC_ENV_INIT_NON_INTERACTIVE=yes",
         "source /etc/profile.d/zz-csc-env.sh",
         "PYTHONSAFEPATH=1",
-        "unset PYTHONPATH PYTHONHOME",
+        "unset PYTHONPATH PYTHONHOME PYTHONOPTIMIZE",
         'export PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"',
+        "python-source-provenance.txt",
+        'env -u PYTHONOPTIMIZE PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"',
         "APPTAINERENV_PYTHONSAFEPATH=1",
         'APPTAINERENV_PYTHONPATH="/work/source/${EXPECTED_TOP_LEVEL}/hpc/roihu"',
         "nvcc --version",
@@ -232,8 +234,9 @@ def test_dependent_finalizer_invokes_the_governed_adapter():
     assert "source /etc/profile.d/zz-csc-env.sh" in wrapper
     assert "module load python-data" in wrapper
     assert wrapper.index("export PYTHONSAFEPATH=1") < wrapper.index("python3")
-    assert "unset PYTHONPATH PYTHONHOME" in wrapper
-    assert 'assert sys.flags.safe_path and "" not in sys.path' in wrapper
+    assert "unset PYTHONPATH PYTHONHOME PYTHONOPTIMIZE" in wrapper
+    assert "Python safe-path provenance guard failed" in wrapper
+    assert "assert sys.flags.safe_path" not in wrapper
     readme = (ROIHU / "README.md").read_text(encoding="utf-8")
     assert "--dependency=" in readme and "afterok:" in readme
     assert "sacct" in adapter
