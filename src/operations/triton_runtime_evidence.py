@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 EXPECTED_BATCH_SIZES = {8, 32, 64}
 
 
