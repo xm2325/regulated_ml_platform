@@ -63,15 +63,26 @@ jobs:
           docker image inspect "${TRITON_IMAGE}" > reports/triton_capacity/triton_server_image_inspect.json
       - name: Run concurrent HTTP, dynamic batching, Perf Analyzer, and capacity drill
         run: bash scripts/triton_capacity_smoke.sh
+      - name: Render latency, throughput, and observed-batch evidence
+        run: |
+          python -m src.operations.render_triton_capacity_report \
+            --benchmark reports/triton_capacity/concurrency_benchmark.json \
+            --capacity reports/triton_capacity/capacity_plan.json \
+            --output reports/triton_capacity/capacity_report.html
+          test -s reports/triton_capacity/capacity_report.html
       - name: Prove v1.2 capacity evidence is bounded and passing
         run: |
           python - <<'PY'
           import json
           report = json.load(open("reports/triton_capacity/capacity_plan.json"))
           assert report["status"] == "PASS", report
+          assert report["checks"]["semantic_probability_parity"] is True, report
+          assert report["checks"]["semantic_http_correctness"] is True, report
           assert report["checks"]["dynamic_batching_observed"] is True, report
+          assert report["checks"]["perf_analyzer_available"] is True, report
           assert report["checks"]["capacity_point_available"] is True, report
-          assert report["perf_analyzer"]["available"] is True, report
+          assert report["capacity_evidence"]["source"] == "nvidia_triton_perf_analyzer", report
+          assert report["semantic_client_observation"]["capacity_source"] is False, report
           assert report["claim_boundary"]["production_capacity_claim_allowed"] is False, report
           assert report["claim_boundary"]["gpu_capacity_claim_allowed"] is False, report
           assert report["capacity_evidence"]["recommended_reference_replicas"] >= 1, report
