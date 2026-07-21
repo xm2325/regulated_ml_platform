@@ -134,6 +134,8 @@ def test_triton_smoke_is_loopback_digest_verified_and_not_gate_evidence():
     assert "trtexec" in script and "tritonserver" in script and "perf_analyzer" in script
     assert "TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec" in script
     assert 'test -x "${TRTEXEC_PATH}"' in script
+    assert '-b "${batch_size}"' in script
+    assert "--batch-size=" not in script
     assert "--http-address=127.0.0.1" in script
     assert "--grpc-address=127.0.0.1" in script
     assert "--metrics-address=127.0.0.1" in script

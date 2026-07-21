@@ -371,7 +371,7 @@ for batch_size in 1 16 64 256; do
     -u "127.0.0.1:${TRITON_HTTP_PORT}" \
     --shape INPUT__0:1024 \
     --input-data=random \
-    --batch-size="${batch_size}" \
+    -b "${batch_size}" \
     --concurrency-range=1:4:1 \
     --measurement-interval=1000 \
     --stability-percentage=20 \
