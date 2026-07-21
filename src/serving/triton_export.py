@@ -12,6 +12,9 @@ import pandas as pd
 
 from src.features.build_features import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 
+TRITON_ONNX_MAX_IR_VERSION = 10
+ONNX_TARGET_OPSET = 18
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -51,7 +54,17 @@ def _probability_output_name(model: Any) -> str:
     return outputs[-1].name
 
 
-def _build_calibrator_onnx(slope: float, intercept: float, output_path: Path) -> None:
+def _require_triton_ir_compatibility(model: Any, model_name: str) -> int:
+    ir_version = int(model.ir_version)
+    if ir_version > TRITON_ONNX_MAX_IR_VERSION:
+        raise ValueError(
+            f"{model_name} ONNX IR version {ir_version} exceeds the validated Triton runtime limit "
+            f"{TRITON_ONNX_MAX_IR_VERSION}"
+        )
+    return ir_version
+
+
+def _build_calibrator_onnx(slope: float, intercept: float, output_path: Path) -> int:
     import onnx
     from onnx import TensorProto, helper
 
@@ -76,9 +89,19 @@ def _build_calibrator_onnx(slope: float, intercept: float, output_path: Path) ->
         helper.make_node("Sigmoid", ["CALIBRATED_LOGIT"], ["SUPPORT_PROBABILITY"]),
     ]
     graph = helper.make_graph(nodes, "regulated_support_platt_calibrator", [input_info], [output_info], initializers)
-    model = helper.make_model(graph, producer_name="regulated_ml_platform", opset_imports=[helper.make_opsetid("", 18)])
+    model = helper.make_model(
+        graph,
+        producer_name="regulated_ml_platform",
+        opset_imports=[helper.make_opsetid("", ONNX_TARGET_OPSET)],
+    )
+    # Newer ONNX packages may emit a newer IR by default than the ONNX Runtime
+    # backend in the validated Triton server can load. Pin the small custom graph
+    # to the validated runtime contract instead of relying on library defaults.
+    model.ir_version = TRITON_ONNX_MAX_IR_VERSION
+    ir_version = _require_triton_ir_compatibility(model, "support_calibrator")
     onnx.checker.check_model(model)
     onnx.save(model, output_path)
+    return ir_version
 
 
 def _base_config(feature_count: int, probability_output: str, max_batch_size: int) -> str:
@@ -188,14 +211,19 @@ def export_triton_repository(
         estimator,
         initial_types=[("FEATURES", FloatTensorType([None, feature_count]))],
         options={id(estimator): {"zipmap": False}},
-        target_opset=18,
+        target_opset=ONNX_TARGET_OPSET,
     )
+    base_ir_version = _require_triton_ir_compatibility(base_model, "support_base")
     probability_output = _probability_output_name(base_model)
     base_path = base_dir / "1" / "model.onnx"
     base_path.write_bytes(base_model.SerializeToString())
 
     calibrator_path = calibrator_dir / "1" / "model.onnx"
-    _build_calibrator_onnx(calibrated.calibration_slope, calibrated.calibration_intercept, calibrator_path)
+    calibrator_ir_version = _build_calibrator_onnx(
+        calibrated.calibration_slope,
+        calibrated.calibration_intercept,
+        calibrator_path,
+    )
 
     (base_dir / "config.pbtxt").write_text(_base_config(feature_count, probability_output, max_batch_size), encoding="utf-8")
     (calibrator_dir / "config.pbtxt").write_text(_calibrator_config(max_batch_size), encoding="utf-8")
@@ -221,7 +249,10 @@ def export_triton_repository(
         "max_batch_size": max_batch_size,
         "preferred_batch_sizes": [8, 32, 64],
         "max_queue_delay_microseconds": 500,
-        "onnx_opset": 18,
+        "onnx_opset": ONNX_TARGET_OPSET,
+        "triton_onnx_max_ir_version": TRITON_ONNX_MAX_IR_VERSION,
+        "support_base_onnx_ir_version": base_ir_version,
+        "support_calibrator_onnx_ir_version": calibrator_ir_version,
         "base_probability_output": probability_output,
         "calibration": {
             "method": "platt_scaling",
