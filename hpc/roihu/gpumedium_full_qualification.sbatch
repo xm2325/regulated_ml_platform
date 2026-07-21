@@ -14,6 +14,7 @@
 
 set -euo pipefail
 umask 077
+export PYTHONSAFEPATH=1
 
 fail() {
   printf 'Roihu full qualification failed closed: %s\n' "$1" >&2
@@ -108,6 +109,9 @@ source /etc/profile.d/zz-csc-env.sh
 set -u
 module --force purge
 module load python-pytorch/2.10
+export PYTHONNOUSERSITE=1
+export PYTHONSAFEPATH=1
+unset PYTHONPATH PYTHONHOME
 module -t list 2>"${EVIDENCE_DIR}/raw/module-list.txt"
 command -v apptainer >/dev/null 2>&1 || fail "Apptainer is unavailable"
 [[ "$(uname -m)" == "aarch64" ]] || fail "formal target-side qualification requires Roihu-GPU aarch64"
@@ -173,6 +177,8 @@ from pathlib import Path, PurePosixPath
 archive = Path(sys.argv[1]).resolve(strict=True)
 destination = Path(sys.argv[2]).resolve(strict=True)
 expected = sys.argv[3]
+if not sys.flags.safe_path or "" in sys.path:
+    raise SystemExit("Python safe-path provenance guard is not active")
 count = 0
 expanded = 0
 top = set()
@@ -213,6 +219,7 @@ if not all(path.is_file() for path in required):
 print(root)
 PY
 )"
+export PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"
 
 python3 - "${EXPORT_MANIFEST_PATH}" "${EXPORT_MANIFEST_SHA256}" "${ONNX_PATH}" "${ONNX_SHA256}" \
   "${TRITON_CONFIG_PATH}" "${SOURCE_GIT_COMMIT}" "${EVIDENCE_DIR}/raw/input-validation.json" <<'PY'
@@ -266,6 +273,9 @@ mkdir -p -- "${MODEL_VERSION_DIR}"
 cp -- "${ONNX_PATH}" "${WORK_DIR}/accelerator_qualification.onnx"
 cp -- "${TRITON_CONFIG_PATH}" "${MODEL_REPOSITORY}/accelerator_qualification/config.pbtxt"
 APPTAINER_ARGS=(--cleanenv --containall --nv --bind "${WORK_DIR}:/work")
+export APPTAINERENV_PYTHONNOUSERSITE=1
+export APPTAINERENV_PYTHONSAFEPATH=1
+export APPTAINERENV_PYTHONPATH="/work/source/${EXPECTED_TOP_LEVEL}/hpc/roihu"
 TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec
 apptainer exec "${APPTAINER_ARGS[@]}" "${TRITON_SDK_SIF}" uname -m >"${EVIDENCE_DIR}/raw/sdk-architecture.txt"
 grep -qx aarch64 "${EVIDENCE_DIR}/raw/sdk-architecture.txt" || fail "SDK SIF is not aarch64"

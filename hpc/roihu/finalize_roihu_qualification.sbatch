@@ -11,6 +11,7 @@
 
 set -euo pipefail
 umask 077
+export PYTHONSAFEPATH=1
 
 fail() {
   printf 'Roihu evidence finalizer failed closed: %s\n' "$1" >&2
@@ -38,6 +39,10 @@ source /etc/profile.d/zz-csc-env.sh
 set -u
 module --force purge
 module load python-data
+export PYTHONNOUSERSITE=1
+export PYTHONSAFEPATH=1
+unset PYTHONPATH PYTHONHOME
+python3 -c 'import sys; assert sys.flags.safe_path and "" not in sys.path'
 python3 "${QUALIFICATION_EVIDENCE_DIR}/validator/finalize_roihu_qualification.py" \
   --evidence-root "${QUALIFICATION_EVIDENCE_DIR}" \
   --job-id "${QUALIFICATION_JOB_ID}" \

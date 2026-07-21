@@ -165,6 +165,11 @@ def test_full_qualification_has_formal_duration_parity_and_telemetry_contracts()
         "TRTEXEC_PATH=/usr/src/tensorrt/bin/trtexec",
         "CSC_ENV_INIT_NON_INTERACTIVE=yes",
         "source /etc/profile.d/zz-csc-env.sh",
+        "PYTHONSAFEPATH=1",
+        "unset PYTHONPATH PYTHONHOME",
+        'export PYTHONPATH="${SOURCE_ROOT}/hpc/roihu"',
+        "APPTAINERENV_PYTHONSAFEPATH=1",
+        'APPTAINERENV_PYTHONPATH="/work/source/${EXPECTED_TOP_LEVEL}/hpc/roihu"',
         "nvcc --version",
         "com.nvidia.tensorrt.version",
         "qualify_triton_http.py",
@@ -226,6 +231,9 @@ def test_dependent_finalizer_invokes_the_governed_adapter():
     assert "CSC_ENV_INIT_NON_INTERACTIVE=yes" in wrapper
     assert "source /etc/profile.d/zz-csc-env.sh" in wrapper
     assert "module load python-data" in wrapper
+    assert wrapper.index("export PYTHONSAFEPATH=1") < wrapper.index("python3")
+    assert "unset PYTHONPATH PYTHONHOME" in wrapper
+    assert 'assert sys.flags.safe_path and "" not in sys.path' in wrapper
     readme = (ROIHU / "README.md").read_text(encoding="utf-8")
     assert "--dependency=" in readme and "afterok:" in readme
     assert "sacct" in adapter
