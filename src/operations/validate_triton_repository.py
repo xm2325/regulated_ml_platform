@@ -25,6 +25,7 @@ def validate_repository(root: Path) -> dict[str, Any]:
     base_config = repository / "support_base" / "config.pbtxt"
     calibrator_config = repository / "support_calibrator" / "config.pbtxt"
     ensemble_config = repository / "support_ensemble" / "config.pbtxt"
+    ensemble_version_dir = repository / "support_ensemble" / "1"
     preprocessor = root / "preprocessor.joblib"
     required = [
         contract_path,
@@ -60,6 +61,7 @@ def validate_repository(root: Path) -> dict[str, Any]:
         "gpu_not_implicitly_enabled": contract.get("gpu_profile_allowed_without_benchmark") is False,
         "base_dynamic_batching": "dynamic_batching" in base_text and "preferred_batch_size" in base_text,
         "calibrator_dynamic_batching": "dynamic_batching" in calibrator_text and "preferred_batch_size" in calibrator_text,
+        "ensemble_version_directory": ensemble_version_dir.is_dir(),
         "ensemble_maps_base": 'model_name: "support_base"' in ensemble_text,
         "ensemble_maps_calibrator": 'model_name: "support_calibrator"' in ensemble_text,
         "ensemble_output": "SUPPORT_PROBABILITY" in ensemble_text,
