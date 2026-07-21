@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -67,12 +68,61 @@ def test_gputest_wrapper_matches_roihu_gh200_and_is_smoke_only():
         "-l 1",
         'status="SMOKE_PASS"',
         '"gpu_eligibility_decision_allowed": False',
+        "PYTHON_WHEELHOUSE",
+        "onnx-wheelhouse.json",
+        "--no-index",
+        "--no-deps",
+        "--require-hashes",
+        "PYTHONNOUSERSITE=1",
+        "PYTHONSAFEPATH=1",
+        "unset PYTHONPATH PYTHONHOME",
+        "PIP_CONFIG_FILE=/dev/null",
+        "onnx-direct-dependencies-and-imports",
+        '"onnx_checker_passed"',
     ):
         assert contract in script
     assert "SOURCE_ARCHIVE" in script and "/projappl" in script
     assert "EVIDENCE_ROOT" in script and "/scratch" in script
-    assert "pip install" not in script
+    assert "pip download" not in script
     assert "docker pull" not in script
+    assert script.index("export PYTHONNOUSERSITE=1") < script.index("python3")
+    assert script.index("export PYTHONSAFEPATH=1") < script.index("python3")
+    assert script.index("unset PYTHONPATH PYTHONHOME") < script.index("python3")
+    assert 'export PYTHONPATH="${SOURCE_ROOT}/hpc/roihu:${PYTHON_SITE_PACKAGES}"' in script
+    assert '"python_safe_path": sys.flags.safe_path' in script
+    assert '"implicit_current_directory_excluded": "" not in sys.path' in script
+
+
+def test_roihu_onnx_wheel_contract_is_arm64_pinned_and_prepared_outside_slurm():
+    contract = json.loads((ROIHU / "onnx-wheelhouse.json").read_text(encoding="utf-8"))
+    lock = (ROIHU / "requirements-onnx.lock").read_text(encoding="utf-8")
+    helper = (ROIHU / "prepare_onnx_wheelhouse.sh").read_text(encoding="utf-8")
+    wrapper = (ROIHU / "gputest_pytorch.sbatch").read_text(encoding="utf-8")
+
+    assert contract["schema_version"] == "regulated-ml-platform.roihu-python-wheelhouse/v1"
+    assert contract["python_cache_tag"] == "cpython-312"
+    assert contract["platform_machine"] == "aarch64"
+    packages = {package["name"]: package for package in contract["packages"]}
+    assert packages["onnx"]["version"] == "1.22.0"
+    assert packages["onnx"]["sha256"] == "ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16"
+    assert packages["protobuf"]["version"] == "5.29.6"
+    assert packages["protobuf"]["sha256"] == "a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6"
+    assert contract["runtime_contract"]["network_allowed_in_batch_job"] is False
+    assert "onnx==1.22.0" in lock and "protobuf==5.29.6" in lock
+    assert "sha256:ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16" in lock
+    assert "sha256:a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6" in lock
+    assert "module load python-pytorch/2.10" in helper
+    assert "pip download" in helper and "--only-binary=:all:" in helper and "--require-hashes" in helper
+    assert "PIP_CONFIG_FILE=/dev/null" in helper and "https://pypi.org/simple" in helper
+    assert "SHA256SUMS" in helper and '"$(uname -m)" == "aarch64"' in helper
+    assert helper.index("export PYTHONNOUSERSITE=1") < helper.index("python3")
+    assert helper.index("export PYTHONSAFEPATH=1") < helper.index("python3")
+    assert helper.index("unset PYTHONPATH PYTHONHOME") < helper.index("python3")
+    assert '"python_safe_path": sys.flags.safe_path' in helper
+    assert "--no-index" in wrapper and "--no-deps" in wrapper and "--require-hashes" in wrapper
+    assert "python3 -m pip check" not in wrapper
+    assert 'metadata.distribution("onnx").requires' in wrapper
+    assert "pip download" not in wrapper
 
 
 def test_triton_smoke_is_loopback_digest_verified_and_not_gate_evidence():

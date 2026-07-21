@@ -25,9 +25,18 @@ def test_gpu_evidence_workflow_validates_contracts_and_builds_source_bundle() ->
     assert "ruff format --check" in workflow
     assert "tests/test_v13_roihu_gpu_evidence.py" in workflow
     assert "tests/test_v13_roihu_bundle.py" in workflow
+    assert "tests/test_v13_roihu_runtime.py" in workflow
     assert 'bash scripts/prepare_roihu_source_bundle.sh "${RUNNER_TEMP}/roihu-source"' in workflow
     assert "sha256sum --check" in workflow
-    assert "contract-not-gpu-evidence" in workflow
+    assert "staging-contracts-not-gpu-evidence" in workflow
+    assert "--platform manylinux2014_aarch64" in workflow
+    assert "hpc/roihu/requirements-onnx.lock" in workflow
+    assert "ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16" in workflow
+    assert "a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6" in workflow
+    assert "python -m pip_audit" in workflow
+    assert "--no-deps" in workflow and "--disable-pip" in workflow
+    assert "pypi-release-audit.json" in workflow
+    assert "roihu-arm64-wheelhouse" in workflow
     assert '".github/workflows/platform.yml"' in workflow
     assert '"helm/regulated-ai/**"' in workflow
 

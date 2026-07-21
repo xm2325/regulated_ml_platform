@@ -16,7 +16,8 @@ and 72 CPU cores. See CSC's [PyTorch module](https://docs.csc.fi/apps/pytorch/),
 
 1. Create an immutable source archive whose single top-level directory embeds the
    full Git commit.
-2. Stage code and small immutable inputs under `/projappl/project_2012997`; submit
+2. Stage code and small immutable inputs under `/projappl/project_2012997`, including
+   the hash-locked CPython 3.12/aarch64 ONNX/protobuf wheelhouse; submit
    jobs and write results under `/scratch/project_2012997`.
 3. Run the bounded `gputest` PyTorch smoke job. It compares the same deterministic MLP on
    Grace CPU FP32, GH200 CUDA FP32, and GH200 CUDA BF16; then exports those exact
@@ -59,22 +60,63 @@ only the safely extracted copy in node-local `$TMPDIR`. Extract the `.sbatch` en
 from that verified archive into the user's project scratch submit directory; do not
 maintain a second mutable runtime copy.
 
-## 2. Run the PyTorch GH200 exercise
+## 2. Prepare the pinned Python wheelhouse outside Slurm
+
+CSC's `python-pytorch/2.10` module provides the required PyTorch/CUDA stack but not
+the `onnx` package. `python-data` cannot be layered on top because CSC Python
+environment modules are mutually exclusive. Extract the reviewed wheel helper and
+its two contracts from the same immutable source archive. Prefer the
+`roihu-arm64-wheelhouse/` directory uploaded by the green GitHub Actions staging
+artifact. If that artifact cannot be transferred directly, run the same reviewed
+helper on the Roihu-GPU **login node**, not in a batch job:
+
+```bash
+export PROJECT=project_2012997
+export APP_ROOT="/projappl/${PROJECT}/${USER}/regulated_ml_platform/v1.3.0"
+export RUN_ROOT="/scratch/${PROJECT}/${USER}/regulated_ml_platform/v1.3.0"
+# Set these two values from the verified source-bundle.json staged under APP_ROOT.
+export SOURCE_GIT_COMMIT=<full-40-character-commit>
+export SOURCE_ARCHIVE="${APP_ROOT}/source/regulated-ml-platform-${SOURCE_GIT_COMMIT}.tar.gz"
+ARCHIVE_ROOT="regulated_ml_platform-${SOURCE_GIT_COMMIT}"
+WHEEL_CONTRACT_DIR="${RUN_ROOT}/wheel-contract"
+mkdir -p "${WHEEL_CONTRACT_DIR}" "${APP_ROOT}/wheelhouse"
+for name in prepare_onnx_wheelhouse.sh onnx-wheelhouse.json requirements-onnx.lock; do
+  tar -xOzf "${SOURCE_ARCHIVE}" "${ARCHIVE_ROOT}/hpc/roihu/${name}" \
+    > "${WHEEL_CONTRACT_DIR}/${name}"
+done
+chmod 700 "${WHEEL_CONTRACT_DIR}/prepare_onnx_wheelhouse.sh"
+"${WHEEL_CONTRACT_DIR}/prepare_onnx_wheelhouse.sh" \
+  "${APP_ROOT}/wheelhouse/onnx-1.22.0-protobuf-5.29.6-cp312-aarch64"
+
+export PYTHON_WHEELHOUSE="${APP_ROOT}/wheelhouse/onnx-1.22.0-protobuf-5.29.6-cp312-aarch64"
+(cd "${PYTHON_WHEELHOUSE}" && sha256sum --check SHA256SUMS)
+```
+
+The helper downloads only `onnx==1.22.0` and its required `protobuf==5.29.6`,
+enforces both reviewed SHA-256 values, and runs an opset-18 export plus
+`onnx.checker` compatibility test against the loaded CSC module. GitHub Actions
+independently builds the same target wheelhouse and audits both exact releases. The
+Slurm job has no package-index access: it requires an exact file inventory, rechecks
+both wheel and source-contract digests, then uses
+`--no-index --no-deps --require-hashes` to install into node-local `$TMPDIR`.
+
+## 3. Run the PyTorch GH200 exercise
 
 Submit from a project scratch directory. Replace the digest and commit with the
 recorded values; do not use abbreviated commits.
 
 ```bash
-cd /scratch/project_2012997/regulated_ml_platform
+cd "${RUN_ROOT}/submit"
 sbatch \
-  --account=project_2012997 \
-  --export=ALL,SOURCE_ARCHIVE=/projappl/project_2012997/regulated_ml_platform/source/regulated_ml_platform-<commit>.tar.gz,SOURCE_SHA256=<64-hex>,SOURCE_GIT_COMMIT=<40-hex>,EVIDENCE_ROOT=/scratch/project_2012997/regulated_ml_platform/evidence \
-  /projappl/project_2012997/regulated_ml_platform/runtime/hpc/roihu/gputest_pytorch.sbatch
+  --account="${PROJECT}" \
+  --export=ALL,SOURCE_ARCHIVE="${SOURCE_ARCHIVE}",SOURCE_SHA256=<64-hex>,SOURCE_GIT_COMMIT="${SOURCE_GIT_COMMIT}",PYTHON_WHEELHOUSE="${PYTHON_WHEELHOUSE}",EVIDENCE_ROOT="${RUN_ROOT}/evidence" \
+  gputest_pytorch.sbatch
 ```
 
 `gputest_pytorch.sbatch` is intentionally capped at 15 minutes and marked
 `SMOKE_ONLY`. It loads only
-`python-pytorch/2.10`, sets `umask 077`, requests `gpu:gh200:1`, validates GH200 and
+`python-pytorch/2.10`, installs only the digest-verified wheelhouse offline into
+node-local storage, sets `umask 077`, requests `gpu:gh200:1`, validates GH200 and
 compute capability 9.0, samples `nvidia-smi` every second, and writes a unique
 `pytorch-gh200-<job-id>/` evidence directory.
 
@@ -89,7 +131,10 @@ Important outputs include:
   `export_manifest.json`: ONNX intermediate and Triton plan-backend contract for the
   exact benchmark weights.
 - `cross_artifact_validation.json`: verifies that benchmark and export use the same
-  workload name and weights SHA-256.
+  workload name and weights SHA-256, and requires `onnx.checker` to pass.
+- `python-wheelhouse-input.json`, `python-wheelhouse-environment.json`, and
+  `python-wheelhouse-install.log`: record the exact dependency bytes, target
+  ABI/package versions, offline installation, and ONNX direct-dependency checks.
 - `job_manifest.json`: compact artifact inventory with every file's SHA-256 and the
   job's fail-closed status.
 
@@ -99,7 +144,7 @@ transfer. The CPU comparator is the 72-core NVIDIA Grace allocation paired with 
 GH200, not Roihu's AMD CPU partition; describe it precisely and do not generalize it
 into a universal CPU/GPU cost claim.
 
-## 3. Optional TensorRT and Triton smoke
+## 4. Optional TensorRT and Triton smoke
 
 Pre-stage **ARM64/GH200-compatible** Triton server and SDK SIFs under the project's
 `/scratch` area (recommended for large images) or `/projappl` if quota permits,
@@ -138,7 +183,7 @@ the target GPU/software stack and is not claimed portable. Perf Analyzer uses ra
 contract-valid input, so this stage does not establish semantic parity against
 PyTorch; that remains an explicit blocked claim.
 
-## 4. Formal `gpumedium` candidate-profile attempt
+## 5. Formal `gpumedium` candidate-profile attempt
 
 The formal path is deliberately separate from both smoke jobs. It fixes TensorRT to
 FP32 with TF32 disabled, uses the exact deterministic CPU fixture over binary Triton

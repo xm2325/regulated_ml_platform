@@ -15,6 +15,7 @@ on:
       - "tests/test_v13_gpu_workflow.py"
       - "tests/test_v13_roihu_bundle.py"
       - "tests/test_v13_roihu_gpu_evidence.py"
+      - "tests/test_v13_roihu_runtime.py"
       - "requirements*.txt"
       - "pyproject.toml"
   push:
@@ -32,6 +33,7 @@ on:
       - "tests/test_v13_gpu_workflow.py"
       - "tests/test_v13_roihu_bundle.py"
       - "tests/test_v13_roihu_gpu_evidence.py"
+      - "tests/test_v13_roihu_runtime.py"
       - "requirements*.txt"
       - "pyproject.toml"
   workflow_dispatch:
@@ -74,14 +76,17 @@ jobs:
             tests/test_v13_gpu_platform.py \
             tests/test_v13_gpu_workflow.py \
             tests/test_v13_roihu_bundle.py \
-            tests/test_v13_roihu_gpu_evidence.py
+            tests/test_v13_roihu_gpu_evidence.py \
+            tests/test_v13_roihu_runtime.py
           ruff format --check \
             src/operations/roihu_gpu_evidence.py \
             tests/test_v13_gpu_platform.py \
             tests/test_v13_gpu_workflow.py \
             tests/test_v13_roihu_bundle.py \
-            tests/test_v13_roihu_gpu_evidence.py
+            tests/test_v13_roihu_gpu_evidence.py \
+            tests/test_v13_roihu_runtime.py
           bash -n scripts/prepare_roihu_source_bundle.sh
+          bash -n hpc/roihu/prepare_onnx_wheelhouse.sh
           find hpc/roihu -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           find hpc/roihu -type f -name '*.sbatch' -print0 | xargs -0 -r -n1 bash -n
       - name: Validate v1.3 evidence policy and fail-closed CLI contract
@@ -92,13 +97,104 @@ jobs:
             tests/test_v13_gpu_platform.py \
             tests/test_v13_gpu_workflow.py \
             tests/test_v13_roihu_bundle.py \
-            tests/test_v13_roihu_gpu_evidence.py
+            tests/test_v13_roihu_gpu_evidence.py \
+            tests/test_v13_roihu_runtime.py
       - name: Build immutable source-bundle contract
         run: |
           set -euo pipefail
           bash scripts/prepare_roihu_source_bundle.sh "${RUNNER_TEMP}/roihu-source"
           cd "${RUNNER_TEMP}/roihu-source"
           sha256sum --check regulated-ml-platform-*.tar.gz.sha256
+      - name: Verify pinned Roihu ARM64 Python wheelhouse contract
+        env:
+          PIP_CONFIG_FILE: /dev/null
+        run: |
+          set -euo pipefail
+          wheelhouse="${RUNNER_TEMP}/roihu-arm64-wheelhouse"
+          mkdir -p "${wheelhouse}"
+          python -m pip download \
+            --disable-pip-version-check \
+            --index-url https://pypi.org/simple \
+            --no-deps \
+            --no-cache-dir \
+            --only-binary=:all: \
+            --platform manylinux_2_28_aarch64 \
+            --platform manylinux2014_aarch64 \
+            --python-version 3.12 \
+            --implementation cp \
+            --abi abi3 \
+            --require-hashes \
+            --dest "${wheelhouse}" \
+            --requirement hpc/roihu/requirements-onnx.lock
+          cp hpc/roihu/onnx-wheelhouse.json "${wheelhouse}/"
+          cp hpc/roihu/requirements-onnx.lock "${wheelhouse}/"
+          cd "${wheelhouse}"
+          {
+            printf '%s  %s\n' \
+              'ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16' \
+              'onnx-1.22.0-cp312-abi3-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl'
+            printf '%s  %s\n' \
+              'a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6' \
+              'protobuf-5.29.6-cp38-abi3-manylinux2014_aarch64.whl'
+          } > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Audit exact Roihu wheelhouse package versions
+        env:
+          PIP_CONFIG_FILE: /dev/null
+        run: |
+          set -euo pipefail
+          audit_dir="${RUNNER_TEMP}/roihu-wheelhouse-audit"
+          mkdir -p "${audit_dir}"
+          python - "${audit_dir}" <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          import sys
+          import urllib.request
+          from pathlib import Path
+
+          destination = Path(sys.argv[1])
+          contract = json.loads(Path("hpc/roihu/onnx-wheelhouse.json").read_text(encoding="utf-8"))
+          packages = contract["packages"]
+          requirements = []
+          release_checks = []
+          for package in packages:
+              name = package["name"]
+              version = package["version"]
+              if not re.fullmatch(r"[a-z0-9_-]+", name) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", version):
+                  raise SystemExit("wheelhouse contract contains an unsafe package coordinate")
+              requirements.append(f"{name}=={version}")
+              url = f"https://pypi.org/pypi/{name}/{version}/json"
+              with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - fixed PyPI origin
+                  metadata = json.load(response)
+              vulnerabilities = metadata.get("vulnerabilities", [])
+              release_checks.append({
+                  "name": name,
+                  "version": version,
+                  "release_url": metadata.get("info", {}).get("release_url"),
+                  "vulnerabilities": vulnerabilities,
+                  "status": "PASS" if not vulnerabilities else "FAIL",
+              })
+          (destination / "requirements-audit.txt").write_text("\n".join(requirements) + "\n", encoding="utf-8")
+          report = {
+              "schema_version": "regulated-ml-platform.roihu-pypi-release-audit/v1",
+              "status": "PASS" if all(item["status"] == "PASS" for item in release_checks) else "FAIL",
+              "packages": release_checks,
+          }
+          (destination / "pypi-release-audit.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          if report["status"] != "PASS":
+              raise SystemExit("PyPI reports a vulnerability for a pinned Roihu package release")
+          PY
+          python -m pip_audit \
+            --strict \
+            --no-deps \
+            --disable-pip \
+            --requirement "${audit_dir}/requirements-audit.txt" \
+            --format json \
+            --output "${audit_dir}/pip-audit.json"
       - name: Record GitHub-hosted claim boundary
         run: |
           python - <<'PY'
@@ -118,10 +214,13 @@ jobs:
           destination = Path(os.environ["RUNNER_TEMP"]) / "roihu-source" / "github-claim-boundary.json"
           destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
-      - name: Upload contract artifact (not GPU evidence)
+      - name: Upload staging contracts (not GPU evidence)
         uses: actions/upload-artifact@v4
         with:
-          name: roihu-source-contract-not-gpu-evidence-${{ env.SOURCE_SHA }}
-          path: ${{ runner.temp }}/roihu-source/
+          name: roihu-staging-contracts-not-gpu-evidence-${{ env.SOURCE_SHA }}
+          path: |
+            ${{ runner.temp }}/roihu-source/
+            ${{ runner.temp }}/roihu-arm64-wheelhouse/
+            ${{ runner.temp }}/roihu-wheelhouse-audit/
           if-no-files-found: error
           retention-days: 14

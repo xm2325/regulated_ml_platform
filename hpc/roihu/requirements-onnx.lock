@@ -1,0 +1,6 @@
+# Target-only dependencies layered on CSC python-pytorch/2.10 (Python 3.12/aarch64).
+# NumPy, typing_extensions, and ml_dtypes remain provided by that pinned CSC module.
+onnx==1.22.0 \
+    --hash=sha256:ae5a563f281cd9d2845622cecf6c092a57e4ee1b138f66fdbbdd4200567a5e16
+protobuf==5.29.6 \
+    --hash=sha256:a8866b2cff111f0f863c1b3b9e7572dc7eaea23a7fae27f6fc613304046483e6

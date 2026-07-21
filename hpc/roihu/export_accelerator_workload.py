@@ -126,18 +126,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     config_path.write_text(_triton_config(), encoding="utf-8")
     os.chmod(config_path, 0o600)
 
-    onnx_validation: dict[str, Any]
-    try:
-        import onnx
+    import onnx
 
-        graph = onnx.load(str(onnx_path), load_external_data=False)
-        onnx.checker.check_model(graph)
-        onnx_validation = {"status": "PASS", "onnx_package": onnx.__version__}
-    except ImportError:
-        onnx_validation = {
-            "status": "NOT_RUN",
-            "reason": "onnx package unavailable; TensorRT parser validation remains mandatory in the target-side job",
-        }
+    graph = onnx.load(str(onnx_path), load_external_data=False)
+    onnx.checker.check_model(graph)
+    onnx_validation: dict[str, Any] = {"status": "PASS", "onnx_package": onnx.__version__}
 
     return {
         "schema_version": SCHEMA_VERSION,

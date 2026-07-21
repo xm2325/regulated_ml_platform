@@ -63,6 +63,7 @@ v1.3 adds a cloud-first, two-stage execution path for a deterministic synthetic 
 ```text
 clean, committed source
 → deterministic archive + full Git SHA + SHA-256
+→ audited, hash-locked CPython 3.12/aarch64 ONNX/protobuf wheelhouse (prepared outside Slurm)
 → Roihu gputest: Grace CPU / GH200 CUDA FP32 and BF16 smoke
 → target-side ONNX export
 → gpumedium: ARM64 Apptainer --nv
@@ -75,7 +76,7 @@ clean, committed source
 
 The formal gate requires at least 300 seconds and 1,000 samples for both CPU and GPU paths, at least 1,000 parity rows, zero policy-decision mismatches, bounded HTTP errors, measurable speedup, latency, sustained utilization and memory headroom, plus the exact source/model/SIF bytes. `gputest` and the shorter TensorRT/Triton path are deliberately `SMOKE_ONLY` and cannot issue eligibility.
 
-GitHub Actions remains the cloud contract runner: it validates the Python/shell/Helm code, rejection paths and immutable source bundle, while explicitly recording that an `ubuntu-latest` runner does not prove a GPU. Real accelerator evidence can originate only from the governed Roihu Slurm path.
+GitHub Actions remains the cloud contract runner: it validates the Python/shell/Helm code, rejection paths, immutable source bundle, and the audited SHA-256-pinned ARM64 ONNX/protobuf staging input, while explicitly recording that an `ubuntu-latest` runner does not prove a GPU. The Roihu batch job installs that exact wheelhouse only from a verified project path with `--no-index --no-deps --require-hashes`. Real accelerator evidence can originate only from the governed Roihu Slurm path.
 
 The Kubernetes contract is separate from Roihu. GPU Deployments require `GPU_ELIGIBLE`, `real_gpu`, a 64-character evidence digest, a verified cluster profile, and exact accelerator-product/node-selector binding. GH200 evidence cannot authorize an A100 selector. Optional PDB, NetworkPolicy, GPU ResourceQuota, ServiceMonitor, PrometheusRule and bounded KEDA controls remain disabled by default.
 

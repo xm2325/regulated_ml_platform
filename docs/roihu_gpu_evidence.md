@@ -153,13 +153,42 @@ chmod 700 "${RUN_ROOT}/submit/"*.sbatch
 - 15 分钟
 - CSC `python-pytorch/2.10` module
 
+该 module 实测不包含 `onnx`；`python-data` 会替换而不是补充
+`python-pytorch`。因此先在 Slurm 作业之外准备项目锁定的 CPython 3.12/aarch64
+wheelhouse。首选输入是绿色 GitHub Actions artifact 中的
+`roihu-arm64-wheelhouse/` 目录；无法直接转移该 artifact 时，才在 Roihu-GPU login
+node 运行相同 helper。helper、JSON contract 和 hash lock 必须来自刚才验证过的
+source archive：
+
+```bash
+export WHEEL_CONTRACT_DIR="${RUN_ROOT}/wheel-contract"
+mkdir -p "${WHEEL_CONTRACT_DIR}" "${APP_ROOT}/wheelhouse"
+for name in prepare_onnx_wheelhouse.sh onnx-wheelhouse.json requirements-onnx.lock; do
+  tar -xOzf "${SOURCE_ARCHIVE}" \
+    "${ARCHIVE_ROOT}/hpc/roihu/${name}" > "${WHEEL_CONTRACT_DIR}/${name}"
+done
+chmod 700 "${WHEEL_CONTRACT_DIR}/prepare_onnx_wheelhouse.sh"
+"${WHEEL_CONTRACT_DIR}/prepare_onnx_wheelhouse.sh" \
+  "${APP_ROOT}/wheelhouse/onnx-1.22.0-protobuf-5.29.6-cp312-aarch64"
+
+export PYTHON_WHEELHOUSE="${APP_ROOT}/wheelhouse/onnx-1.22.0-protobuf-5.29.6-cp312-aarch64"
+(cd "${PYTHON_WHEELHOUSE}" && sha256sum --check SHA256SUMS)
+```
+
+helper 在登录节点只下载经过安全审计的 `onnx==1.22.0` 与
+`protobuf==5.29.6`，验证各自 hash，并用 CSC PyTorch 执行 opset-18 export 与
+checker。GitHub Actions 下载、审计并上传相同 ARM64 wheelhouse，但明确不把这个动作
+当作 GPU runtime evidence。实际 batch job 要求目录没有额外文件，并只在 node-local
+`$TMPDIR` 执行 `--no-index --no-deps --require-hashes` 离线安装；检查范围只覆盖 ONNX
+直接依赖和实际 import，避免把 CSC module 中未被本练习加载的其他框架依赖混入结论。
+
 这符合 Roihu 每个完整 GH200 最多配套 72 个 Grace CPU cores 的资源形状。提交命令：
 
 ```bash
 cd "${RUN_ROOT}/submit"
 submission="$(sbatch --parsable \
   --account="${PROJECT}" \
-  --export=ALL,SOURCE_ARCHIVE="${SOURCE_ARCHIVE}",SOURCE_SHA256="${SOURCE_SHA256}",SOURCE_GIT_COMMIT="${SOURCE_GIT_COMMIT}",EVIDENCE_ROOT="${RUN_ROOT}/evidence" \
+  --export=ALL,SOURCE_ARCHIVE="${SOURCE_ARCHIVE}",SOURCE_SHA256="${SOURCE_SHA256}",SOURCE_GIT_COMMIT="${SOURCE_GIT_COMMIT}",PYTHON_WHEELHOUSE="${PYTHON_WHEELHOUSE}",EVIDENCE_ROOT="${RUN_ROOT}/evidence" \
   gputest_pytorch.sbatch)"
 export SMOKE_JOB_ID="${submission%%;*}"
 printf 'SMOKE_JOB_ID=%s\n' "${SMOKE_JOB_ID}"
@@ -184,6 +213,7 @@ sacct -j "${SMOKE_JOB_ID}" \
 - p50/p95/p99、吞吐、显存、FP32/BF16 parity
 - 每秒 `nvidia-smi` utilization/memory/power/temperature/clock telemetry
 - 同一 weights 导出的 ONNX 与 Triton `config.pbtxt`
+- `onnx.checker`、两份 wheel SHA-256、CPython ABI、离线安装和 ONNX direct-dependency check
 
 证据目录：
 
@@ -422,7 +452,7 @@ helm template regulated-ai helm/regulated-ai \
 - 在 pull request 中显式 checkout `pull_request.head.sha`，避免把临时 merge SHA 当成 Roihu source provenance；
 - 测试 evidence validator 的通过/拒绝路径；
 - 从 clean checkout 生成并复核 immutable source bundle；
-- 上传名称包含 `contract-not-gpu-evidence` 的 source contract artifact；
+- 上传名称包含 `staging-contracts-not-gpu-evidence` 的 source/wheel contract artifact；
 - 写出 `executes_gpu_workload=false`、`proves_real_gpu=false` 的 claim boundary。
 
 它不会连接 CSC、续签 SSH certificate、提交 Slurm、运行 `nvidia-smi`、使用 `--gpus`、运行 Apptainer `--nv` 或接触真实 Roihu evidence。真实作业输出应先从 `/scratch` 复制到受控 evidence root，在可信环境中验 hash 和运行 validator；不要因 GitHub workflow 绿色就写“GPU benchmark passed”。
