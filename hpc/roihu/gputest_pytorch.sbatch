@@ -62,6 +62,11 @@ observed_source_sha256="$(sha256sum -- "${SOURCE_ARCHIVE}" | awk '{print $1}')"
 [[ "${observed_source_sha256}" == "${SOURCE_SHA256}" ]] || fail "source archive SHA-256 mismatch"
 printf '%s  %s\n' "${observed_source_sha256}" "$(basename -- "${SOURCE_ARCHIVE}")" >"${EVIDENCE_DIR}/source.sha256"
 
+[[ -r /etc/profile.d/zz-csc-env.sh ]] || fail "CSC non-interactive environment initializer is unavailable"
+export CSC_ENV_INIT_NON_INTERACTIVE=yes
+set +u
+source /etc/profile.d/zz-csc-env.sh
+set -u
 module --force purge
 module load python-pytorch/2.10
 module -t list 2>"${EVIDENCE_DIR}/module-list.txt"

@@ -101,6 +101,11 @@ verify_digest "${TRITON_SDK_SIF}" "${TRITON_SDK_SIF_SHA256}" triton-sdk-sif
 verify_digest "${ONNX_PATH}" "${ONNX_SHA256}" onnx
 verify_digest "${EXPORT_MANIFEST_PATH}" "${EXPORT_MANIFEST_SHA256}" export-manifest
 
+[[ -r /etc/profile.d/zz-csc-env.sh ]] || fail "CSC non-interactive environment initializer is unavailable"
+export CSC_ENV_INIT_NON_INTERACTIVE=yes
+set +u
+source /etc/profile.d/zz-csc-env.sh
+set -u
 module --force purge
 module load python-pytorch/2.10
 module -t list 2>"${EVIDENCE_DIR}/raw/module-list.txt"

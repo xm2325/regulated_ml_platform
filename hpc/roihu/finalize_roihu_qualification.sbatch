@@ -31,6 +31,11 @@ esac
 [[ -f "${QUALIFICATION_EVIDENCE_DIR}/validator/finalize_roihu_qualification.py" ]] \
   || fail "digest-staged finalizer is missing"
 
+[[ -r /etc/profile.d/zz-csc-env.sh ]] || fail "CSC non-interactive environment initializer is unavailable"
+export CSC_ENV_INIT_NON_INTERACTIVE=yes
+set +u
+source /etc/profile.d/zz-csc-env.sh
+set -u
 module --force purge
 module load python-data
 python3 "${QUALIFICATION_EVIDENCE_DIR}/validator/finalize_roihu_qualification.py" \

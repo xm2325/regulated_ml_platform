@@ -58,6 +58,8 @@ def test_gputest_wrapper_matches_roihu_gh200_and_is_smoke_only():
         "#SBATCH --gres=gpu:gh200:1",
         "#SBATCH --time=00:15:00",
         "module load python-pytorch/2.10",
+        "CSC_ENV_INIT_NON_INTERACTIVE=yes",
+        "source /etc/profile.d/zz-csc-env.sh",
         "umask 077",
         "sha256sum",
         "regulated_ml_platform-${SOURCE_GIT_COMMIT}",
@@ -106,6 +108,8 @@ def test_full_qualification_has_formal_duration_parity_and_telemetry_contracts()
         "-lms 200",
         "--format=csv,nounits",
         "--noTF32",
+        "CSC_ENV_INIT_NON_INTERACTIVE=yes",
+        "source /etc/profile.d/zz-csc-env.sh",
         "nvcc --version",
         "com.nvidia.tensorrt.version",
         "qualify_triton_http.py",
@@ -164,6 +168,8 @@ def test_dependent_finalizer_invokes_the_governed_adapter():
     adapter = (ROIHU / "finalize_roihu_qualification.py").read_text(encoding="utf-8")
 
     assert "#SBATCH --partition=test" in wrapper
+    assert "CSC_ENV_INIT_NON_INTERACTIVE=yes" in wrapper
+    assert "source /etc/profile.d/zz-csc-env.sh" in wrapper
     assert "module load python-data" in wrapper
     readme = (ROIHU / "README.md").read_text(encoding="utf-8")
     assert "--dependency=" in readme and "afterok:" in readme
