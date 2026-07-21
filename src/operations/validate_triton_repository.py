@@ -26,6 +26,7 @@ def validate_repository(root: Path) -> dict[str, Any]:
     calibrator_config = repository / "support_calibrator" / "config.pbtxt"
     ensemble_config = repository / "support_ensemble" / "config.pbtxt"
     ensemble_version_dir = repository / "support_ensemble" / "1"
+    ensemble_version_marker = ensemble_version_dir / "version.txt"
     preprocessor = root / "preprocessor.joblib"
     required = [
         contract_path,
@@ -34,6 +35,7 @@ def validate_repository(root: Path) -> dict[str, Any]:
         base_config,
         calibrator_config,
         ensemble_config,
+        ensemble_version_marker,
         preprocessor,
     ]
     failures: list[str] = []
@@ -67,6 +69,8 @@ def validate_repository(root: Path) -> dict[str, Any]:
         "ensemble_output": "SUPPORT_PROBABILITY" in ensemble_text,
         "base_hash_matches": contract["artifacts"]["support_base_onnx_sha256"] == _sha256(base_model_path),
         "calibrator_hash_matches": contract["artifacts"]["support_calibrator_onnx_sha256"] == _sha256(calibrator_model_path),
+        "ensemble_marker_hash_matches": contract["artifacts"]["support_ensemble_version_marker_sha256"]
+        == _sha256(ensemble_version_marker),
         "preprocessor_hash_matches": contract["artifacts"]["preprocessor_sha256"] == _sha256(preprocessor),
         "triton_ir_limit_declared": runtime_ir_limit > 0,
         "base_ir_within_triton_limit": runtime_ir_limit > 0 and base_ir_version <= runtime_ir_limit,
