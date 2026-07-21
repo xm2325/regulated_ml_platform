@@ -7,17 +7,27 @@ from pathlib import Path
 from typing import Any
 
 
-def _points(values: list[tuple[float, float]], width: int, height: int, padding: int = 48) -> str:
-    if not values:
+def _chart(
+    title: str,
+    series: list[tuple[str, list[tuple[float, float]]]],
+    y_label: str,
+    thresholds: list[tuple[str, float]] | None = None,
+) -> str:
+    width, height, padding = 760, 320, 52
+    thresholds = thresholds or []
+    all_points = [point for _, values in series for point in values]
+    if not all_points:
         return ""
-    xs = [item[0] for item in values]
-    ys = [item[1] for item in values]
+
+    xs = [point[0] for point in all_points]
+    ys = [point[1] for point in all_points] + [value for _, value in thresholds]
     min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
+    min_y, max_y = min(0.0, min(ys)), max(ys)
     if max_x == min_x:
         max_x = min_x + 1.0
     if max_y == min_y:
         max_y = min_y + 1.0
+    max_y *= 1.08
 
     def scale_x(value: float) -> float:
         return padding + (value - min_x) / (max_x - min_x) * (width - 2 * padding)
@@ -25,32 +35,52 @@ def _points(values: list[tuple[float, float]], width: int, height: int, padding:
     def scale_y(value: float) -> float:
         return height - padding - (value - min_y) / (max_y - min_y) * (height - 2 * padding)
 
-    return " ".join(f"{scale_x(x):.1f},{scale_y(y):.1f}" for x, y in values)
-
-
-def _chart(title: str, series: list[tuple[str, list[tuple[float, float]]]], y_label: str) -> str:
-    width, height = 760, 300
-    paths = []
-    legend = []
-    dash_patterns = ["", "6 5", "2 4"]
+    paths: list[str] = []
+    legend: list[str] = []
+    dash_patterns = ["", "7 5", "2 4"]
     for index, (name, values) in enumerate(series):
-        points = _points(values, width, height)
-        if not points:
+        if not values:
             continue
+        points = " ".join(f"{scale_x(x):.1f},{scale_y(y):.1f}" for x, y in values)
         dash = dash_patterns[index % len(dash_patterns)]
         dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         paths.append(
             f'<polyline points="{points}" fill="none" stroke="currentColor" stroke-width="2.5"{dash_attr}/>'
         )
+        for x, y in values:
+            paths.append(f'<circle cx="{scale_x(x):.1f}" cy="{scale_y(y):.1f}" r="3.2" fill="currentColor"/>')
         legend.append(f"<span>{html.escape(name)}</span>")
+
+    threshold_lines: list[str] = []
+    for name, value in thresholds:
+        y = scale_y(value)
+        threshold_lines.append(
+            f'<line x1="{padding}" y1="{y:.1f}" x2="{width-padding}" y2="{y:.1f}" '
+            'stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 5" opacity="0.55"/>'
+            f'<text x="{width-padding-4}" y="{y-5:.1f}" text-anchor="end" font-size="11">{html.escape(name)}</text>'
+        )
+
+    unique_xs = sorted(set(xs))
+    x_ticks = "".join(
+        f'<text x="{scale_x(value):.1f}" y="{height-padding+20}" text-anchor="middle" font-size="11">{value:g}</text>'
+        for value in unique_xs
+    )
+    y_ticks = "".join(
+        f'<text x="{padding-8}" y="{scale_y(value)+4:.1f}" text-anchor="end" font-size="11">{value:.1f}</text>'
+        for value in [min_y, (min_y + max_y) / 2, max_y]
+    )
+
     return f"""
 <section class="chart-card">
   <h3>{html.escape(title)}</h3>
-  <p class="axis-label">{html.escape(y_label)} vs concurrency</p>
+  <p class="axis-label">{html.escape(y_label)} vs concurrency · shared axis across all series</p>
   <svg viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}">
-    <line x1="48" y1="252" x2="712" y2="252" stroke="currentColor" opacity="0.25"/>
-    <line x1="48" y1="48" x2="48" y2="252" stroke="currentColor" opacity="0.25"/>
+    <line x1="{padding}" y1="{height-padding}" x2="{width-padding}" y2="{height-padding}" stroke="currentColor" opacity="0.25"/>
+    <line x1="{padding}" y1="{padding}" x2="{padding}" y2="{height-padding}" stroke="currentColor" opacity="0.25"/>
+    {''.join(threshold_lines)}
     {''.join(paths)}
+    {x_ticks}
+    {y_ticks}
   </svg>
   <div class="legend">{' · '.join(legend)}</div>
 </section>
@@ -78,6 +108,7 @@ def render_report(benchmark: dict[str, Any], capacity: dict[str, Any]) -> str:
 
     cap = capacity.get("capacity_evidence", {})
     batching = capacity.get("batching_evidence", {})
+    objectives = capacity.get("service_objectives", {})
     rows = "".join(
         "<tr>"
         f"<td>{int(item['concurrency'])}</td>"
@@ -113,9 +144,9 @@ code,pre{{background:#eef1f7;border-radius:6px}}pre{{padding:14px;overflow:auto}
 NVIDIA Triton Perf Analyzer → server latency/throughput capacity source
 capacity policy → SLO filter + safety headroom + bounded replica reference</pre></section>
 <div class="charts">
-{_chart('p95 latency', [('Custom semantic client', semantic_latency), ('Perf Analyzer', perf_latency)], 'milliseconds')}
+{_chart('p95 latency', [('Custom semantic client', semantic_latency), ('Perf Analyzer', perf_latency)], 'milliseconds', [('p95 SLO', float(objectives.get('p95_latency_ms', 20.0)))])}
 {_chart('Throughput', [('Custom semantic client', semantic_throughput), ('Perf Analyzer', perf_throughput)], 'rows / inferences per second')}
-{_chart('Observed dynamic batch size', [('support_base average batch', average_batch)], 'average rows per backend execution')}
+{_chart('Observed dynamic batch size', [('support_base average batch', average_batch)], 'average rows per backend execution', [('minimum effective batch', float(batching.get('minimum_required_gain', 1.25)))])}
 </div>
 <section><h2>Custom concurrent HTTP evidence</h2><table><thead><tr><th>Concurrency</th><th>p95 ms</th><th>p99 ms</th><th>Rows/s</th><th>Avg batch</th><th>Parity</th></tr></thead><tbody>{rows}</tbody></table></section>
 <section><h2>Boundary</h2><p>{html.escape(capacity.get('claim_boundary',{}).get('statement',''))}</p><p>The current validated tree ensemble remains CPU_ONLY. This report is not a production capacity or GPU performance claim.</p></section>
