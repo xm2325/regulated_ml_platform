@@ -23,7 +23,8 @@ for variable in \
   SLURM_JOB_ID SLURM_JOB_ACCOUNT SLURM_JOB_PARTITION SLURM_CPUS_PER_TASK TMPDIR \
   SOURCE_ARCHIVE SOURCE_SHA256 SOURCE_GIT_COMMIT \
   TORCHSERVE_WHEEL TORCHSERVE_WHEEL_SHA256 \
-  MODEL_ARCHIVER_WHEEL MODEL_ARCHIVER_WHEEL_SHA256 EVIDENCE_ROOT; do
+  MODEL_ARCHIVER_WHEEL MODEL_ARCHIVER_WHEEL_SHA256 \
+  STAGED_JAVA_HOME STAGED_JAVA_MANIFEST_SHA256 EVIDENCE_ROOT; do
   [[ -n "${!variable:-}" ]] || fail "required environment variable ${variable} is not set"
 done
 
@@ -32,7 +33,8 @@ done
 [[ "${SLURM_CPUS_PER_TASK}" -eq 72 ]] || fail "one full GH200 requires 72 Grace CPU cores"
 [[ "${SOURCE_GIT_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail "source commit must be a full SHA-1"
 for digest in \
-  "${SOURCE_SHA256}" "${TORCHSERVE_WHEEL_SHA256}" "${MODEL_ARCHIVER_WHEEL_SHA256}"; do
+  "${SOURCE_SHA256}" "${TORCHSERVE_WHEEL_SHA256}" \
+  "${MODEL_ARCHIVER_WHEEL_SHA256}" "${STAGED_JAVA_MANIFEST_SHA256}"; do
   [[ "${digest}" =~ ^[0-9a-f]{64}$ ]] || fail "invalid SHA-256"
 done
 
@@ -46,7 +48,10 @@ require_project_path() {
 SOURCE_ARCHIVE="$(realpath -e -- "${SOURCE_ARCHIVE}")"
 TORCHSERVE_WHEEL="$(realpath -e -- "${TORCHSERVE_WHEEL}")"
 MODEL_ARCHIVER_WHEEL="$(realpath -e -- "${MODEL_ARCHIVER_WHEEL}")"
-for path in "${SOURCE_ARCHIVE}" "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}"; do
+STAGED_JAVA_HOME="$(realpath -e -- "${STAGED_JAVA_HOME}")"
+for path in \
+  "${SOURCE_ARCHIVE}" "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}" \
+  "${STAGED_JAVA_HOME}"; do
   require_project_path "${path}"
 done
 
@@ -58,6 +63,12 @@ verify_digest() {
 verify_digest "${SOURCE_ARCHIVE}" "${SOURCE_SHA256}"
 verify_digest "${TORCHSERVE_WHEEL}" "${TORCHSERVE_WHEEL_SHA256}"
 verify_digest "${MODEL_ARCHIVER_WHEEL}" "${MODEL_ARCHIVER_WHEEL_SHA256}"
+verify_digest \
+  "${STAGED_JAVA_HOME}/SHA256SUMS" "${STAGED_JAVA_MANIFEST_SHA256}"
+(
+  cd "${STAGED_JAVA_HOME}"
+  sha256sum --check --quiet SHA256SUMS
+) || fail "staged OpenJDK file manifest verification failed"
 
 archive_root="regulated_ml_platform-${SOURCE_GIT_COMMIT}"
 marker="$(tar -xOzf "${SOURCE_ARCHIVE}" "${archive_root}/.regulated-ml-source-commit")"
@@ -75,9 +86,9 @@ set +u
 source /etc/profile.d/zz-csc-env.sh
 set -u
 module --force purge
-module load python-pytorch/2.10 openjdk/25.0.1_8
+module load python-pytorch/2.10
 export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
-JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+JAVA_HOME="${STAGED_JAVA_HOME}"
 export JAVA_HOME
 [[ -x "${JAVA_HOME}/bin/java" ]] || fail "JAVA_HOME does not contain an executable java"
 unset PYTHONPATH PYTHONHOME PYTHONOPTIMIZE
