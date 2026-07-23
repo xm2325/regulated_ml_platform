@@ -21,21 +21,31 @@ def _payload(record: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-def handle(data: list[dict[str, Any]], context: Any) -> list[dict[str, Any]]:
+def _initialize(context: Any) -> None:
     global _device, _model
-    if _model is None:
-        properties = context.system_properties
-        gpu_id = properties.get("gpu_id")
-        if not torch.cuda.is_available() or gpu_id is None:
-            raise RuntimeError("the TorchServe smoke requires an assigned CUDA device")
-        _device = torch.device(f"cuda:{gpu_id}")
-        serialized = context.manifest["model"]["serializedFile"]
-        _model = torch.jit.load(
-            str(Path(properties["model_dir"]) / serialized),
-            map_location=_device,
-        )
-        _model.eval()
+    properties = context.system_properties
+    gpu_id = properties.get("gpu_id")
+    if not torch.cuda.is_available() or gpu_id is None:
+        raise RuntimeError("the TorchServe smoke requires an assigned CUDA device")
+    _device = torch.device(f"cuda:{gpu_id}")
+    serialized = context.manifest["model"]["serializedFile"]
+    _model = torch.jit.load(
+        str(Path(properties["model_dir"]) / serialized),
+        map_location=_device,
+    )
+    _model.eval()
 
+
+def handle(
+    data: list[dict[str, Any]] | None,
+    context: Any,
+) -> list[dict[str, Any]] | None:
+    if _model is None:
+        _initialize(context)
+    # TorchServe invokes module-level handlers once with data=None to initialize
+    # the model before it dispatches inference requests.
+    if data is None:
+        return None
     payload = _payload(data[0])
     batch = int(payload.get("batch", 256))
     if not 1 <= batch <= 1024:
