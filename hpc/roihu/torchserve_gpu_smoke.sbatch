@@ -238,6 +238,7 @@ printf '%s\n' \
   'number_of_netty_threads=4' \
   'job_queue_size=32' \
   'async_logging=true' \
+  'metrics_mode=prometheus' \
   >"${WORK_DIR}/config.properties"
 if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
   printf '%s\n' 'vmargs=-Djdk.lang.Process.launchMechanism=FORK' \
