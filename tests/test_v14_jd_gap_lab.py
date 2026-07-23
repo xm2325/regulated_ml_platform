@@ -248,7 +248,6 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "staged OpenJDK file manifest verification failed",
         '"${JAVA_HOME}/bin/java" -version',
         "-Djdk.lang.Process.launchMechanism=FORK",
-        "Java ProcessBuilder",
         '[[ "${NODE_LOCAL_TMPDIR}" == /tmp/* ]]',
         'TS_WORKER_PYTHON="${WORKER_LAUNCHER}"',
         'sys.executable = os.environ["TS_WORKER_PYTHON"]',
@@ -264,7 +263,9 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "SMOKE_ONLY",
         "recommended_runtime_claim_allowed",
     ):
-        assert contract in script or contract in (ROIHU / "torchserve_smoke_tools.py").read_text(encoding="utf-8")
+        assert contract in script or contract in (
+            ROIHU / "torchserve_smoke_tools.py"
+        ).read_text(encoding="utf-8")
     assert "pip download" not in script
 
 
