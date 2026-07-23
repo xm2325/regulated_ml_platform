@@ -139,28 +139,23 @@ Key retained evidence:
 
 ## Archived TorchServe compatibility gate
 
-The JD names TorchServe, so the lab also tested whether its final 0.12.0 release
+The JD names TorchServe, so the lab tested whether its final 0.12.0 release
 could run a bounded GPU inference smoke on Roihu. This is a compatibility
 investigation, not a recommendation to adopt TorchServe: the upstream
 [repository is archived](https://github.com/pytorch/serve), it states that
 maintenance is limited with no planned security fixes, and the official
 [troubleshooting guide requires Java 17](https://docs.pytorch.org/serve/Troubleshooting.html).
-Roihu exposed OpenJDK 25 rather than the documented Java version.
 
-The gate still established several facts under an offline, source-bound
-contract:
+The final path used a staged Temurin 17.0.19 ARM64 runtime and an NVIDIA PyTorch
+24.02 ARM64 SIF under Apptainer `--cleanenv --nv`. The source archive, SIF,
+OpenJDK file manifest, TorchServe wheel, and model-archiver wheel were all
+SHA-256 verified before execution. Wheel installation was offline and
+job-scoped. TorchServe listened only on loopback, the management API remained
+disabled, and prediction, CUDA, GH200 telemetry, and Prometheus metrics were all
+mandatory for `SMOKE_PASS`.
 
-- TorchServe and model-archiver 0.12.0 wheels installed with no network access;
-- PyTorch 2.10.0+cu130 detected the assigned GH200;
-- a staged Temurin OpenJDK 25.0.1 file manifest verified before execution;
-- the TorchServe Java frontend started on loopback and `/ping` returned;
-- token authorization was disabled only on loopback, while the management model
-  API remained disabled;
-- prediction success and CUDA execution were mandatory, so frontend readiness
-  alone could not produce `SMOKE_PASS`.
-
-Preflight job `318733` completed successfully. Runtime attempts then narrowed
-the incompatibility:
+The fail-closed sequence first isolated the host boundary and then completed the
+container path:
 
 | Job | Outcome | Finding |
 | ---: | --- | --- |
@@ -169,25 +164,33 @@ the incompatibility:
 | `318999` | bounded cancellation | a staged project Java started the frontend, but the worker failed to spawn from node-local temporary storage |
 | `319007` | bounded cancellation | Java's explicit `FORK` launcher did not remove worker spawn error 107 |
 | `319021` | `FAILED 1:0` after 2:56 | project-scratch work and temp paths still produced 28 worker spawn error-107 events and 28 HTTP 503 predictions |
+| `319828` | `FAILED 1:0` | exact Temurin 17 host retry proved Java 17 alone did not remove the Roihu host worker-launch boundary |
+| `320648`, `320655` | fail closed | container entry isolated missing `ensurepip` and Debian `pip --prefix` script-layout assumptions |
+| `320679`, `320867` | bounded cancellation | node-local short sockets fixed AF_UNIX length; handler initialization was then corrected |
+| `320871` | fail closed after 40 CUDA predictions | inference passed, but default log-mode metrics correctly failed the Prometheus gate |
+| `321067` | `COMPLETED 0:0` in 22 seconds | Java 17 frontend, worker, 40 HTTP 200 predictions, CUDA response, GH200 telemetry, and Prometheus metrics passed |
 
-Job `319021` used source commit
-`79c7385eac9ef60211d49d5dca3b73a04afb5031` and source archive SHA-256
-`d110c0c83cd63996d1a87d9132f391b3dc60af5448efc4b2961850927c24f98c`.
-The TorchServe wheel SHA-256 was
-`db127160102d29f390964f758b7ecc5039d3d278fafc85bf9994c273b3ef6954`;
-the staged JDK manifest SHA-256 was
-`6a4a39d45a4900a0cb56113d684eb60b8be842383e0bcf31f1184359d4e5c053`.
-The retained frontend log SHA-256 is
-`dbaced0758f63b87bd18cbb63bdb0baf48e9fc2d3962f3751e9473bbcc1d60d4`,
-and the Slurm output SHA-256 is
-`280a40c6fb7ad2955df23d20aff03478c4499d322a43ce9c11b1db311fcd12fe`.
+Job `321067` used source commit
+`ce6060264764beb07100976ac7608f71dd66cfd3`, source archive SHA-256
+`835c930ac5f2b5691fa2915d2019c5230a487ff417f8e6014c1877d291e2d24e`,
+TorchServe wheel SHA-256
+`db127160102d29f390964f758b7ecc5039d3d278fafc85bf9994c273b3ef6954`,
+model-archiver wheel SHA-256
+`baaf66065396c3512030b3b2c57cce333edab9fffe9e528352cb4cc291645a78`,
+Temurin manifest SHA-256
+`63e3e87582d1f25e012f08fb391dcb9ba454b51b19d06051a62ac089d2b0d455`,
+and PyTorch SIF SHA-256
+`9b224b3d66800174e34f375d4fc17086d66b929f1870136d5ab79ecea2797cb5`.
+The `SMOKE_PASS` summary SHA-256 is
+`b0a4e0d77eea5dd65dd812c1d504950caf9faac691e4c527a67ff44f1a21bfcd`;
+Prometheus evidence SHA-256 is
+`b5d6ef4e4ee4aad0075c178ea965d746a956d557538e0fbe86576b08e0639f8b`.
 
-The correct claim is therefore: the candidate implemented and ran a
-fail-closed TorchServe compatibility gate, proved offline toolchain/frontend
-readiness, diagnosed an unsupported-Java worker-launch incompatibility, and did
-not claim GPU inference success. A future retry should use a supported Java 17
-runtime in a maintained image or replace the archived server; repeating the
-same Java 25/Roihu combination is not justified.
+The response reported `device=cuda`, batch 256, output shape `[256,16]`; 13
+telemetry samples confirmed an NVIDIA GH200 120GB and peak allocated memory of
+797 MiB. These values prove only a synthetic compatibility path. They do not
+support performance, production capacity, security approval, maintained-runtime
+suitability, or a recommendation to use archived TorchServe instead of Triton.
 
 ## Interview use
 

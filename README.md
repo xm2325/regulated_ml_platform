@@ -112,13 +112,14 @@ or change formal job `304890` from `GPU_REJECTED`. See the
 failed attempts, measurements, and interview prompts.
 
 The same lab also contains a fail-closed TorchServe 0.12.0 compatibility gate.
-On Roihu, the offline wheel and staged OpenJDK were hash-verified, PyTorch
-2.10/CUDA 13 detected the assigned GH200, and TorchServe's loopback Java
-frontend answered `/ping`. The backend worker nevertheless failed
-reproducibly because Roihu provides Java 25 while TorchServe documents Java 17:
-job `319021` recorded 28 failed worker spawns with Linux error 107 and 28 HTTP
-503 predictions before exiting `FAILED 1:0`. This is retained as negative
-compatibility evidence, not inference, performance, or production experience.
+Host-module attempts retained the reproducible Java/Python worker error 107 as
+negative evidence. The governed path then isolated Temurin 17.0.19 and the
+archived server inside a hash-locked NVIDIA PyTorch ARM64 Apptainer image.
+Exact-source job `321067` completed `0:0`: loopback health, 40 HTTP 200
+predictions, a CUDA handler response for batch 256, GH200 telemetry, and
+Prometheus metrics all passed. This is a synthetic compatibility smoke only,
+not a benchmark, security approval, maintained-runtime recommendation,
+production-capacity result, or TorchServe production-operations claim.
 
 ## v1.2: runtime batching and capacity evidence
 

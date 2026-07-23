@@ -188,46 +188,48 @@ decision.
 
 ## TorchServe compatibility result
 
-The v1.4 follow-up also implemented a bounded, offline TorchServe 0.12.0 GPU
+The v1.4 follow-up implemented a bounded, offline TorchServe 0.12.0 GPU
 compatibility gate because the target JD names TorchServe. It did not relax the
-project's evidence policy: a healthy Java frontend was insufficient without a
-successful CUDA worker response.
+project's evidence policy: frontend health was insufficient without a CUDA
+response, external GPU telemetry, Prometheus metrics, immutable inputs, and a
+successful Slurm state.
 
-Preflight job `318733` completed the wheel install and confirmed PyTorch
-2.10.0+cu130, CUDA 13, the assigned GH200, TorchServe 0.12.0, and staged
-Temurin OpenJDK 25.0.1. Final job `319021` used exact source commit
-`79c7385eac9ef60211d49d5dca3b73a04afb5031`, moved both the virtual environment
-and temporary model extraction to project scratch, and forced Java's `FORK`
-process launcher. TorchServe answered its loopback `/ping`, but its Java process
-could not spawn the Python model worker:
+Host-module attempts through job `319963` preserved error 107 as negative
+evidence. Exact Temurin 17 host job `319828` showed that changing Java alone was
+insufficient. The passing path isolated Java 17 and TorchServe in a hash-locked
+NVIDIA PyTorch ARM64 SIF, kept the interface loopback-only, installed the two
+verified wheels without network access, and used node-local short Unix sockets.
 
-```text
-Exec failed, error: 107 (Transport endpoint is not connected)
-```
-
-The job recorded 28 worker-spawn errors and 28 HTTP 503 prediction responses,
-then failed closed after 2:56 as `FAILED 1:0`. No `summary.json` or
-`SMOKE_PASS` was emitted. This matters because the archived TorchServe project
-documents Java 17, whereas the available Roihu module/staged environment was
-Java 25; the experiment does not establish TorchServe inference compatibility.
+Job `321067` used source commit
+`ce6060264764beb07100976ac7608f71dd66cfd3` and completed `0:0` in 22 seconds.
+It produced 40 HTTP 200 predictions. The retained response reported batch 256,
+`device=cuda`, and output shape `[256,16]`. Prometheus recorded
+`ts_inference_requests_total=40`; 13 `nvidia-smi` samples confirmed one NVIDIA
+GH200 120GB and 797 MiB peak memory use. Runtime versions were TorchServe
+0.12.0, Java 17.0.19, PyTorch 2.3.0a0+ebedce2, and CUDA 12.3.
 
 Retained checksums:
 
 - source archive:
-  `d110c0c83cd63996d1a87d9132f391b3dc60af5448efc4b2961850927c24f98c`;
+  `835c930ac5f2b5691fa2915d2019c5230a487ff417f8e6014c1877d291e2d24e`;
+- PyTorch SIF:
+  `9b224b3d66800174e34f375d4fc17086d66b929f1870136d5ab79ecea2797cb5`;
 - TorchServe wheel:
   `db127160102d29f390964f758b7ecc5039d3d278fafc85bf9994c273b3ef6954`;
+- model-archiver wheel:
+  `baaf66065396c3512030b3b2c57cce333edab9fffe9e528352cb4cc291645a78`;
 - staged JDK manifest:
-  `6a4a39d45a4900a0cb56113d684eb60b8be842383e0bcf31f1184359d4e5c053`;
-- job `319021` TorchServe log:
-  `dbaced0758f63b87bd18cbb63bdb0baf48e9fc2d3962f3751e9473bbcc1d60d4`;
-- job `319021` Slurm output:
-  `280a40c6fb7ad2955df23d20aff03478c4499d322a43ce9c11b1db311fcd12fe`.
+  `63e3e87582d1f25e012f08fb391dcb9ba454b51b19d06051a62ac089d2b0d455`;
+- passing summary:
+  `b0a4e0d77eea5dd65dd812c1d504950caf9faac691e4c527a67ff44f1a21bfcd`;
+- Prometheus metrics:
+  `b5d6ef4e4ee4aad0075c178ea965d746a956d557538e0fbe86576b08e0639f8b`;
+- Slurm output:
+  `d839e3bfb6c5ae801a0e3fc12e79f9cf879742db08586f614226badb918b8e34`.
 
-This is useful hands-on compatibility and diagnosis evidence, but it is not a
-TorchServe inference, throughput, security, maintenance, or production claim.
-The next legitimate experiment requires Java 17 in a controlled image or a
-maintained serving alternative.
+This proves a synthetic Java 17/TorchServe/CUDA compatibility smoke, not
+throughput, security approval, maintenance suitability, production capacity,
+production operation, or a recommendation to adopt the archived server.
 
 ## Fail-closed learning record
 
@@ -248,7 +250,10 @@ The execution sequence also preserved these non-passing attempts:
 | `318733` | TorchServe preflight passed | offline wheels, staged Java, PyTorch/CUDA and the assigned GH200 were visible; no inference claim was made |
 | `318896`, `318976` | TorchServe failed closed | isolated Java visibility and process-execution assumptions before staging a project-local runtime |
 | `318999`, `319007` | bounded cancellation | frontend was ready, but worker spawn error 107 persisted across node-local temporary storage and Java's explicit `FORK` launcher |
-| `319021` | TorchServe failed closed | project-scratch work/temp paths still produced 28 worker spawn errors and 28 HTTP 503s; unsupported Java 25 compatibility remains unproved |
+| `319021`, `319828`, `319942`, `319956`, `319963` | TorchServe failed closed | host paths retained error 107; exact Java 17 alone did not cross the host Java/Python worker boundary |
+| `320648`, `320655` | TorchServe failed closed | container isolation exposed missing `ensurepip` and non-portable console-script layout assumptions |
+| `320679`, `320867`, `320871` | controlled diagnosis | fixed AF_UNIX path length, handler initialization, and explicit Prometheus mode; the last attempt completed 40 CUDA predictions but still failed the empty-metrics gate |
+| `321067` | TorchServe `SMOKE_PASS` | exact Java 17 Apptainer path completed health, 40 CUDA predictions, GH200 telemetry, Prometheus metrics, hashes, and Slurm `COMPLETED 0:0` |
 
 This history is useful evidence of operational judgement: infrastructure
 readiness, higher throughput, or a green smoke result is insufficient when the

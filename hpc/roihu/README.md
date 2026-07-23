@@ -183,7 +183,27 @@ the target GPU/software stack and is not claimed portable. Perf Analyzer uses ra
 contract-valid input, so this stage does not establish semantic parity against
 PyTorch; that remains an explicit blocked claim.
 
-## 5. Formal `gpumedium` candidate-profile attempt
+## 5. Archived TorchServe Java 17 compatibility smoke
+
+The JD-specific TorchServe path is deliberately isolated from the maintained Triton
+path. Pre-stage an ARM64 NVIDIA PyTorch SIF, Temurin 17 tree, and TorchServe/model
+archiver 0.12.0 wheels in project storage. Record all SHA-256 values, then submit
+`torchserve_apptainer_gpu_smoke.sbatch` with the exact source archive and runtime
+inputs exported.
+
+The outer job verifies the source and SIF before entering Apptainer with
+`--cleanenv --nv`. The inner gate verifies the remaining artifacts, installs only
+the two offline wheels into a job-scoped target, uses a short node-local Unix socket,
+and requires loopback health, 40 HTTP 200 predictions, a CUDA handler response,
+GH200 telemetry, and Prometheus metrics. It emits `SMOKE_PASS`, never a production
+or performance decision.
+
+Reference job `321067` completed `0:0` with TorchServe 0.12.0, Java 17.0.19,
+PyTorch 2.3.0a0+ebedce2, and CUDA 12.3. The server is archived and under limited
+maintenance, so this result is a compatibility exercise only. Prefer the maintained
+Triton path for any production design discussion.
+
+## 6. Formal `gpumedium` candidate-profile attempt
 
 The formal path is deliberately separate from both smoke jobs. It fixes TensorRT to
 FP32 with TF32 disabled, uses the exact deterministic CPU fixture over binary Triton

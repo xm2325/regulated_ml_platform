@@ -259,6 +259,7 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "disable_token_authorization=true",
         "inference_address=http://127.0.0.1:8080",
         "metrics_address=http://127.0.0.1:8082",
+        "metrics_mode=prometheus",
         "source archive marker mismatch",
         "SMOKE_ONLY",
         "recommended_runtime_claim_allowed",
@@ -284,3 +285,10 @@ def test_torchserve_apptainer_wrapper_is_hash_bound_clean_and_gpu_enabled():
     ):
         assert contract in script
     assert "apptainer pull" not in script
+
+
+def test_torchserve_handler_honors_module_level_initialization_contract():
+    handler = (ROIHU / "torchserve_smoke_handler.py").read_text(encoding="utf-8")
+    assert "if data is None:" in handler
+    assert "return None" in handler
+    assert "_initialize(context)" in handler
