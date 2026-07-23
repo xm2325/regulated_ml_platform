@@ -168,10 +168,23 @@ else
   mkdir -m 700 -p -- "${WORK_DIR}/venv/bin" "${prefix_site}"
   "${PYTHON_BIN}" -m pip install \
     --disable-pip-version-check --no-index --no-deps --ignore-installed \
-    --prefix "${WORK_DIR}/venv" \
+    --target "${prefix_site}" \
     "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}" \
     >"${EVIDENCE_DIR}/offline-install.log"
   ln -s -- "${PYTHON_BIN}" "${WORK_DIR}/venv/bin/python"
+  cat >"${WORK_DIR}/venv/bin/torch-model-archiver" <<EOF
+#!/usr/bin/bash
+exec "${PYTHON_BIN}" -c \
+  'from model_archiver.model_packaging import generate_model_archive; generate_model_archive()' \
+  "\$@"
+EOF
+  cat >"${WORK_DIR}/venv/bin/torchserve" <<EOF
+#!/usr/bin/bash
+exec "${PYTHON_BIN}" -c 'from ts.model_server import start; start()' "\$@"
+EOF
+  chmod 700 \
+    "${WORK_DIR}/venv/bin/torch-model-archiver" \
+    "${WORK_DIR}/venv/bin/torchserve"
   export PYTHONPATH="${prefix_site}"
 fi
 
