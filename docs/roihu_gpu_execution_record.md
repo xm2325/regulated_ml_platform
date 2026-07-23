@@ -129,6 +129,63 @@ therefore correctly leaves:
 Decision SHA-256:
 `4e12703fdcd62a0d1ea5ef3d8dad050884f1059f091fea95a5089e4d4ea392ee`
 
+## v1.4 profiling and same-node scaling exercise
+
+The follow-up lab answered a narrower engineering question without changing the
+formal decision: how does the rejected synthetic TensorRT plan behave under
+Nsight profiling and one, two, and four independent Triton instances on one
+Roihu GH200 node?
+
+Exact runtime source:
+
+- commit: `17ce7f9ae7eb104eb7c95c02cf6e5dff560c909f`;
+- source archive SHA-256:
+  `5edf8c27494a8d3357255eedfa2ede2386a58b25fb653a215aa3374977d56589`;
+- parent plan SHA-256:
+  `46f414ab796163f2e269e07b802735b0ef853e4fe8260c89bac33eeeb2c13abd`;
+- GitHub Roihu contract:
+  [run 30009063991](https://github.com/xm2325/regulated_ml_platform/actions/runs/30009063991).
+
+Each `gputest` job used 72 Grace CPU cores per GH200, one loopback-only Triton
+server per GPU, batch 64, concurrency 4 per server, and 200 ms GPU telemetry.
+All three jobs completed `0:0`:
+
+| GPUs | Job | Elapsed | Total infer/s | Speedup | Efficiency | Worst p95 | Mean GPU util |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `318684` | 1:53 | 396,132 | 1.000x | 100.0% | 0.736 ms | 44.57% |
+| 2 | `318690` | 0:38 | 873,294 | 2.205x | 110.23% | 0.598 ms | 48.58% |
+| 4 | `318694` | 0:41 | 1,608,875 | 4.061x | 101.54% | 0.987 ms | 45.92% |
+
+The apparent super-linear efficiencies are not a production conclusion: these
+are short independent smoke points and do not control cache state, placement,
+thermal state, or representative traffic. The four-server result also ranged
+from 357,815 to 430,602 infer/s per GPU and had the highest worst-server p95,
+which is a reason to investigate placement and load balance before any capacity
+claim.
+
+The one-GPU Nsight trace retained 232,527 instances of the main TensorRT GEMM
+kernel and the same number of split-K instances. The main GEMM accounted for
+78.6% of captured CUDA kernel time and split-K for 16.4%. In the CUDA API
+summary, event synchronisation represented 36.8% of captured API time, kernel
+launches 29.6%, and asynchronous copies 13.1%. Peak allocated GPU memory was
+731 MiB out of 97,871 MiB. The practical diagnosis is many small GEMM launches
+with meaningful synchronisation/transfer overhead, not a memory-capacity
+bottleneck.
+
+Retained receipts:
+
+- aggregate SHA-256:
+  `f397fb8ad1b4adc7b6ddceadcda02fe8d58bb3be992e0c426622ebbdbb3ff7ba`;
+- `sacct` receipt SHA-256:
+  `1d3d8d2e7687b0f405b0c5a208b76892521683b538ce3118f7e3386f4bd4d1a4`;
+- one-GPU Nsight report SHA-256:
+  `74f6126483587fb95c79b424f35df41e6798e5c7c6145256e0f60dada1e7dc41`.
+
+The aggregate status is `PASS` for this `SMOKE_ONLY` exercise. It explicitly
+forbids automatic right-sizing and production-capacity claims, does not
+re-establish semantic parity, and cannot alter the parent `GPU_REJECTED`
+decision.
+
 ## Fail-closed learning record
 
 The execution sequence also preserved these non-passing attempts:
@@ -142,6 +199,9 @@ The execution sequence also preserved these non-passing attempts:
 | `304737`, `304764` | failed after target-side build/READY | a Slurm step could not import the workload; replaced environment-dependent lookup with an attested sibling-path import and added an actual-entrypoint preflight |
 | `304754` | failed before execution | submission came from the login home rather than project scratch; resubmitted from the required controlled path |
 | `304890` + `304891` | runtime pass, governed rejection | full evidence completed; validator rejected the inefficient latency/utilization profile and prevented promotion |
+| `318645` | failed during profiled serving | Nsight exhausted the container's 63 MiB `/tmp`; moved profiler temporary data to project scratch and changed telemetry to an unbuffered append path |
+| `318663` | workload and profiling completed, finalisation failed | Nsight 2025.3 appended report identifiers to CSV filenames; changed finalisation to require exactly one matching kernel/API report and kept the failed evidence directory |
+| `318684`, `318690`, `318694` | smoke exercise passed | exact corrected source completed the one-, two-, and four-GH200 points; aggregate retained the formal rejection and production claim boundary |
 
 This history is useful evidence of operational judgement: infrastructure
 readiness, higher throughput, or a green smoke result is insufficient when the

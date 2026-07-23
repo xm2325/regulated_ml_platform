@@ -95,6 +95,48 @@ python3 hpc/roihu/summarize_triton_rightsizing.py aggregate \
   --output ${EVIDENCE_ROOT}/triton-rightsizing-aggregate.json
 ```
 
+## Executed 1/2/4-GH200 result
+
+The source-bound run for commit
+`17ce7f9ae7eb104eb7c95c02cf6e5dff560c909f` used source archive SHA-256
+`5edf8c27494a8d3357255eedfa2ede2386a58b25fb653a215aa3374977d56589`.
+All three jobs completed `0:0` on `gputest`:
+
+| GPUs | Slurm job | Total infer/s | Speedup | Scaling efficiency | Worst p95 | Mean GPU utilisation |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `318684` | 396,132 | 1.000x | 100.0% | 0.736 ms | 44.57% |
+| 2 | `318690` | 873,294 | 2.205x | 110.23% | 0.598 ms | 48.58% |
+| 4 | `318694` | 1,608,875 | 4.061x | 101.54% | 0.987 ms | 45.92% |
+
+The small apparent super-linear points are short-run observations, not a
+capacity or cost claim. Cache state, run-to-run variation, server placement, and
+the synthetic request stream were not controlled sufficiently to infer
+super-linear production scaling. The four-GPU point also exposed imbalance:
+individual server throughput ranged from 357,815 to 430,602 infer/s, and its
+worst p95 was higher than the one- and two-GPU points.
+
+The one-GPU Nsight trace showed that 78.6% of captured CUDA kernel time was in
+the main TensorRT GEMM kernel and another 16.4% in its split-K kernel. Within
+captured CUDA API time, `cudaEventSynchronize` accounted for 36.8%,
+`cuLaunchKernelEx` for 29.6%, and `cudaMemcpyAsync` for 13.1%. This is a useful
+profiling diagnosis: the workload is dominated by many small GEMM launches plus
+synchronisation and transfer overhead, rather than memory capacity. Peak memory
+was only 731 MiB of 97,871 MiB on the one-GPU point.
+
+The aggregate evidence passed its source, plan, and run-status checks. It remains
+`SMOKE_ONLY`; formal job `304890` stays `GPU_REJECTED`.
+
+Key retained evidence:
+
+- aggregate:
+  `/scratch/project_2012997/xiaomei/regulated_ml_platform/v1.4.0/evidence/triton-rightsizing-aggregate-17ce7f9.json`,
+  SHA-256 `f397fb8ad1b4adc7b6ddceadcda02fe8d58bb3be992e0c426622ebbdbb3ff7ba`;
+- Slurm receipt:
+  `/scratch/project_2012997/xiaomei/regulated_ml_platform/v1.4.0/evidence/triton-rightsizing-sacct-17ce7f9.psv`,
+  SHA-256 `1d3d8d2e7687b0f405b0c5a208b76892521683b538ce3118f7e3386f4bd4d1a4`;
+- Nsight report from job `318684`, SHA-256
+  `74f6126483587fb95c79b424f35df41e6798e5c7c6145256e0f60dada1e7dc41`.
+
 ## Interview use
 
 The strongest answer is not “more GPUs were faster.” Explain:
