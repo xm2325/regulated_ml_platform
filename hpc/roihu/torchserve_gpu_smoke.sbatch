@@ -153,11 +153,27 @@ done
 "${PYTHON_BIN}" "${WORK_DIR}/torchserve_smoke_tools.py" --help \
   >"${EVIDENCE_DIR}/tools-help.txt"
 
-"${PYTHON_BIN}" -m venv --system-site-packages "${WORK_DIR}/venv"
-"${WORK_DIR}/venv/bin/python" -m pip install \
-  --disable-pip-version-check --no-index --no-deps \
-  "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}" \
-  >"${EVIDENCE_DIR}/offline-install.log"
+if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
+  "${PYTHON_BIN}" -m venv --system-site-packages "${WORK_DIR}/venv"
+  "${WORK_DIR}/venv/bin/python" -m pip install \
+    --disable-pip-version-check --no-index --no-deps \
+    "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}" \
+    >"${EVIDENCE_DIR}/offline-install.log"
+else
+  # NVIDIA's 24.02 runtime omits Debian's ensurepip package. Keep TorchServe in
+  # a job-scoped prefix while retaining the container's governed PyTorch/CUDA.
+  python_series="$("${PYTHON_BIN}" -c \
+    'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  prefix_site="${WORK_DIR}/venv/lib/python${python_series}/site-packages"
+  mkdir -m 700 -p -- "${WORK_DIR}/venv/bin" "${prefix_site}"
+  "${PYTHON_BIN}" -m pip install \
+    --disable-pip-version-check --no-index --no-deps --ignore-installed \
+    --prefix "${WORK_DIR}/venv" \
+    "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}" \
+    >"${EVIDENCE_DIR}/offline-install.log"
+  ln -s -- "${PYTHON_BIN}" "${WORK_DIR}/venv/bin/python"
+  export PYTHONPATH="${prefix_site}"
+fi
 
 "${WORK_DIR}/venv/bin/python" "${WORK_DIR}/torchserve_smoke_tools.py" \
   build-model --output "${WORK_DIR}/model.pt"
