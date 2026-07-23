@@ -104,6 +104,9 @@ WORK_DIR="${EVIDENCE_ROOT}/.torchserve-work-${SLURM_JOB_ID}"
 [[ ! -e "${WORK_DIR}" ]] || fail "refusing to reuse a TorchServe work directory"
 mkdir -m 700 -- "${WORK_DIR}"
 mkdir -m 700 -- "${WORK_DIR}/tmp"
+NODE_LOCAL_TMPDIR="$(realpath -e -- "${TMPDIR}")"
+[[ "${NODE_LOCAL_TMPDIR}" == /tmp/* ]] || fail "Slurm TMPDIR must be node-local /tmp"
+WORKER_LAUNCHER="${NODE_LOCAL_TMPDIR}/regulated-ml-worker-${SLURM_JOB_ID}"
 export TEMP="${WORK_DIR}/tmp"
 export TMPDIR="${WORK_DIR}/tmp"
 TELEMETRY_PID=""
@@ -118,6 +121,7 @@ cleanup() {
   if [[ -x "${WORK_DIR}/venv/bin/torchserve" ]]; then
     env -u LD_PRELOAD "${WORK_DIR}/venv/bin/torchserve" --stop >/dev/null 2>&1
   fi
+  rm -f -- "${WORKER_LAUNCHER}"
   cp -a -- "${WORK_DIR}/logs" "${EVIDENCE_DIR}/" 2>/dev/null
   rm -rf -- "${WORK_DIR}"
   exit "${return_code}"
@@ -152,7 +156,7 @@ mkdir -p -- "${WORK_DIR}/model-store" "${WORK_DIR}/logs"
 # Roihu's module Python resolves through /appl on Lustre. Java ProcessBuilder
 # cannot exec that interpreter directly on a compute node and returns Linux
 # error 107. Keep the exact interpreter and venv site-packages, but pass a
-# controlled shell wrapper to TorchServe's Java --python argument.
+# controlled node-local shell wrapper to TorchServe's Java --python argument.
 worker_python_target="$(readlink -f -- "${WORK_DIR}/venv/bin/python")"
 worker_site_packages="$(
   "${WORK_DIR}/venv/bin/python" -c \
@@ -161,7 +165,7 @@ worker_site_packages="$(
 [[ -x "${worker_python_target}" ]] || fail "resolved worker Python is not executable"
 [[ "${worker_site_packages}" == "${WORK_DIR}/venv/"* ]] \
   || fail "worker site-packages escaped the controlled venv"
-cat >"${WORK_DIR}/worker-python" <<EOF
+cat >"${WORKER_LAUNCHER}" <<EOF
 #!/usr/bin/bash
 set -euo pipefail
 unset LD_PRELOAD
@@ -169,7 +173,8 @@ export VIRTUAL_ENV="${WORK_DIR}/venv"
 export PYTHONPATH="${worker_site_packages}"
 exec -a "${WORK_DIR}/venv/bin/python" "${worker_python_target}" "\$@"
 EOF
-chmod 700 "${WORK_DIR}/worker-python"
+chmod 700 "${WORKER_LAUNCHER}"
+sha256sum "${WORKER_LAUNCHER}" >"${EVIDENCE_DIR}/worker-launcher.sha256"
 
 printf '%s\n' \
   'inference_address=http://127.0.0.1:8080' \
@@ -188,7 +193,7 @@ cd "${WORK_DIR}"
 "${JAVA_HOME}/bin/java" -version >"${EVIDENCE_DIR}/java-version.txt" 2>&1
 env -u LD_PRELOAD \
   JAVA_HOME="${JAVA_HOME}" \
-  TS_WORKER_PYTHON="${WORK_DIR}/worker-python" \
+  TS_WORKER_PYTHON="${WORKER_LAUNCHER}" \
   "${WORK_DIR}/venv/bin/python" -c \
   'import os, sys; sys.executable = os.environ["TS_WORKER_PYTHON"]; from ts.model_server import start; start()' \
   --start \
