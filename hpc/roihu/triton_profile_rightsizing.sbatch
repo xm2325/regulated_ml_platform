@@ -149,6 +149,7 @@ for ((index = 0; index < GPU_COUNT; index++)); do
   cp -- "${MODEL_PLAN}" "${repository}/accelerator_qualification/1/model.plan"
   cp -- "${TRITON_CONFIG_PATH}" "${repository}/accelerator_qualification/config.pbtxt"
 done
+mkdir -p -- "${WORK_DIR}/nsys-tmp"
 
 port_seed=$((SLURM_JOB_ID % 1000))
 HTTP_BASE=$((20000 + port_seed * 10))
@@ -177,7 +178,9 @@ for ((index = 0; index < GPU_COUNT; index++)); do
     --allow-http=true --allow-grpc=true --allow-metrics=true --allow-gpu-metrics=true
   )
   if [[ "${ENABLE_NSYS}" == "1" ]]; then
-    APPTAINERENV_CUDA_VISIBLE_DEVICES="${index}" \
+    env -u LD_PRELOAD \
+      APPTAINERENV_CUDA_VISIBLE_DEVICES="${index}" \
+      APPTAINERENV_TMPDIR=/work/nsys-tmp \
       srun --overlap --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --argos=no \
       apptainer exec "${bind_args[@]}" "${TRITON_SERVER_SIF}" \
       /usr/local/cuda/bin/nsys profile \
@@ -217,11 +220,13 @@ for ((index = 0; index < GPU_COUNT; index++)); do
     >"${EVIDENCE_DIR}/triton-server-${index}-metadata.json"
 done
 
+printf '%s\n' \
+  'timestamp,index,uuid,name,utilization.gpu,memory.used,memory.total,power.draw' \
+  >"${EVIDENCE_DIR}/nvidia-smi.csv"
 nvidia-smi \
   --query-gpu=timestamp,index,uuid,name,utilization.gpu,memory.used,memory.total,power.draw \
   --format=csv,noheader,nounits -lms 200 \
-  | awk 'BEGIN {print "timestamp,index,uuid,name,utilization.gpu,memory.used,memory.total,power.draw"} {print}' \
-  >"${EVIDENCE_DIR}/nvidia-smi.csv" 2>"${EVIDENCE_DIR}/nvidia-smi.err" &
+  >>"${EVIDENCE_DIR}/nvidia-smi.csv" 2>"${EVIDENCE_DIR}/nvidia-smi.err" &
 TELEMETRY_PID="$!"
 sleep 1
 kill -0 "${TELEMETRY_PID}" 2>/dev/null || fail "GPU telemetry sampler failed to start"

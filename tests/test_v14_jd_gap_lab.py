@@ -167,6 +167,8 @@ def test_roihu_profile_script_is_bounded_source_bound_and_offline():
         "/usr/local/cuda/bin/nsys profile",
         "--duration=45",
         "--kill=sigterm",
+        "APPTAINERENV_TMPDIR=/work/nsys-tmp",
+        "env -u LD_PRELOAD",
         "--concurrency-range=4",
         "--measurement-interval=3000",
         "-lms 200",
