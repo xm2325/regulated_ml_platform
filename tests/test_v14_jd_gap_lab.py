@@ -251,8 +251,6 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "SMOKE_ONLY",
         "recommended_runtime_claim_allowed",
     ):
-        assert contract in script or contract in (
-            ROIHU / "torchserve_smoke_tools.py"
-        ).read_text(encoding="utf-8")
+        assert contract in script or contract in (ROIHU / "torchserve_smoke_tools.py").read_text(encoding="utf-8")
     assert "pip download" not in script
     assert "apptainer pull" not in script

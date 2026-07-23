@@ -67,9 +67,7 @@ def summarize(args: argparse.Namespace) -> int:
         "torchserve_response_received": isinstance(response, dict),
         "cuda_handler_confirmed": isinstance(response, dict) and response.get("device") == "cuda",
         "declared_batch_observed": isinstance(response, dict) and response.get("batch") == args.batch,
-        "expected_output_shape": (
-            isinstance(response, dict) and response.get("output_shape") == [args.batch, 16]
-        ),
+        "expected_output_shape": (isinstance(response, dict) and response.get("output_shape") == [args.batch, 16]),
         "gh200_confirmed": "GH200" in telemetry["name"],
         "gpu_memory_allocated": telemetry["peak_memory_used_mib"] > 0,
     }
