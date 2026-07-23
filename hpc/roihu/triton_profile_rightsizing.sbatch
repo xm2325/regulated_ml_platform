@@ -279,9 +279,10 @@ if [[ "${ENABLE_NSYS}" == "1" ]]; then
   cp -- "${WORK_DIR}/nsys-profile.nsys-rep" "${EVIDENCE_DIR}/nsys-profile.nsys-rep"
   for report in cuda_gpu_kern_sum cuda_api_sum cuda_gpu_mem_time_sum osrt_sum; do
     output_name="${report//_/-}"
-    apptainer exec \
+    APPTAINERENV_TMPDIR=/work/nsys-tmp \
+      apptainer exec \
       --cleanenv --containall \
-      --bind "${EVIDENCE_DIR}:/evidence" \
+      --bind "${EVIDENCE_DIR}:/evidence,${WORK_DIR}:/work" \
       "${TRITON_SERVER_SIF}" \
       /usr/local/cuda/bin/nsys stats \
         --report "${report}" \
@@ -291,9 +292,21 @@ if [[ "${ENABLE_NSYS}" == "1" ]]; then
         /evidence/nsys-profile.nsys-rep \
         >"${EVIDENCE_DIR}/nsys-${output_name}.log" 2>&1
   done
-  cp -- "${EVIDENCE_DIR}/nsys-cuda-gpu-kern-sum.csv" \
+  mapfile -t kernel_summaries < <(
+    find "${EVIDENCE_DIR}" -maxdepth 1 -type f \
+      -name 'nsys-cuda-gpu-kern-sum*.csv' -print
+  )
+  mapfile -t api_summaries < <(
+    find "${EVIDENCE_DIR}" -maxdepth 1 -type f \
+      -name 'nsys-cuda-api-sum*.csv' -print
+  )
+  [[ "${#kernel_summaries[@]}" -eq 1 ]] \
+    || fail "Nsight emitted an unexpected number of CUDA kernel summary files"
+  [[ "${#api_summaries[@]}" -eq 1 ]] \
+    || fail "Nsight emitted an unexpected number of CUDA API summary files"
+  cp -- "${kernel_summaries[0]}" \
     "${EVIDENCE_DIR}/nsys-cuda-kernel-summary.csv"
-  cp -- "${EVIDENCE_DIR}/nsys-cuda-api-sum.csv" \
+  cp -- "${api_summaries[0]}" \
     "${EVIDENCE_DIR}/nsys-cuda-api-summary.csv"
 else
   for pid in "${SERVER_PIDS[@]}"; do
