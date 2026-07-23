@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+from argparse import Namespace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -184,3 +185,74 @@ def test_roihu_profile_script_is_bounded_source_bound_and_offline():
     assert "--http-address=127.0.0.1" in script
     assert "--grpc-address=127.0.0.1" in script
     assert "--metrics-address=127.0.0.1" in script
+
+
+def test_torchserve_summary_requires_cuda_and_preserves_archived_runtime_boundary(
+    tmp_path: Path,
+):
+    path = ROIHU / "torchserve_smoke_tools.py"
+    spec = importlib.util.spec_from_file_location("torchserve_smoke", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    response = tmp_path / "response.json"
+    response.write_text(
+        json.dumps(
+            {
+                "batch": 256,
+                "device": "cuda",
+                "output_shape": [256, 16],
+                "output_checksum": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    telemetry = tmp_path / "nvidia-smi.csv"
+    _write_telemetry(telemetry, 1)
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model")
+    output = tmp_path / "summary.json"
+    args = Namespace(
+        response=response,
+        telemetry=telemetry,
+        model=model,
+        output=output,
+        batch=256,
+        source_commit="a" * 40,
+        source_archive_sha256="b" * 64,
+        torchserve_wheel_sha256="c" * 64,
+        model_archiver_wheel_sha256="d" * 64,
+        slurm_job_id="9001",
+        partition="gputest",
+        torchserve_version="0.12.0",
+        pytorch_version="2.10.0+cu130",
+        cuda_version="13.0",
+        java_version="25.0.1",
+    )
+
+    assert module.summarize(args) == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["status"] == "SMOKE_PASS"
+    assert report["claim_boundary"]["performance_claim_allowed"] is False
+    assert report["claim_boundary"]["production_readiness_claim_allowed"] is False
+    assert report["claim_boundary"]["recommended_runtime_claim_allowed"] is False
+
+
+def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
+    script = (ROIHU / "torchserve_gpu_smoke.sbatch").read_text(encoding="utf-8")
+    for contract in (
+        "#SBATCH --partition=gputest",
+        "#SBATCH --time=00:10:00",
+        "--no-index --no-deps",
+        "disable_token_authorization=true",
+        "inference_address=http://127.0.0.1:8080",
+        "metrics_address=http://127.0.0.1:8082",
+        "source archive marker mismatch",
+        "SMOKE_ONLY",
+        "recommended_runtime_claim_allowed",
+    ):
+        assert contract in script or contract in (
+            ROIHU / "torchserve_smoke_tools.py"
+        ).read_text(encoding="utf-8")
+    assert "pip download" not in script
+    assert "apptainer pull" not in script
