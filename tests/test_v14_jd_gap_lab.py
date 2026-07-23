@@ -244,6 +244,7 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "#SBATCH --partition=gputest",
         "#SBATCH --time=00:10:00",
         "--no-index --no-deps",
+        "JAVA_HOME=",
         "disable_token_authorization=true",
         "inference_address=http://127.0.0.1:8080",
         "metrics_address=http://127.0.0.1:8082",

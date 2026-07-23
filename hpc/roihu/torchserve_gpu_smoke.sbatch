@@ -77,6 +77,9 @@ set -u
 module --force purge
 module load python-pytorch/2.10 openjdk/25.0.1_8
 export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
+JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+export JAVA_HOME
+[[ -x "${JAVA_HOME}/bin/java" ]] || fail "JAVA_HOME does not contain an executable java"
 unset PYTHONPATH PYTHONHOME PYTHONOPTIMIZE
 [[ "$(uname -m)" == "aarch64" ]] || fail "Roihu aarch64 is required"
 mapfile -t gpu_identity < <(
@@ -143,7 +146,8 @@ printf '%s\n' \
 
 export LOG_LOCATION="${WORK_DIR}/logs"
 cd "${WORK_DIR}"
-env -u LD_PRELOAD "${WORK_DIR}/venv/bin/torchserve" \
+"${JAVA_HOME}/bin/java" -version >"${EVIDENCE_DIR}/java-version.txt" 2>&1
+env -u LD_PRELOAD JAVA_HOME="${JAVA_HOME}" "${WORK_DIR}/venv/bin/torchserve" \
   --start \
   --ncs \
   --model-store "${WORK_DIR}/model-store" \
