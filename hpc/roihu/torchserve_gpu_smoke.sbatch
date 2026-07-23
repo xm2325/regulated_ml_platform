@@ -150,9 +150,9 @@ mkdir -p -- "${WORK_DIR}/model-store" "${WORK_DIR}/logs"
   --force
 
 # Roihu's module Python resolves through /appl on Lustre. Java ProcessBuilder
-# cannot exec that cross-filesystem venv symlink on a compute node and returns
-# Linux error 107. Keep the exact interpreter and venv site-packages, but make
-# the worker entrypoint a local shell script so Java execs /bin/bash first.
+# cannot exec that interpreter directly on a compute node and returns Linux
+# error 107. Keep the exact interpreter and venv site-packages, but pass a
+# controlled shell wrapper to TorchServe's Java --python argument.
 worker_python_target="$(readlink -f -- "${WORK_DIR}/venv/bin/python")"
 worker_site_packages="$(
   "${WORK_DIR}/venv/bin/python" -c \
@@ -161,8 +161,7 @@ worker_site_packages="$(
 [[ -x "${worker_python_target}" ]] || fail "resolved worker Python is not executable"
 [[ "${worker_site_packages}" == "${WORK_DIR}/venv/"* ]] \
   || fail "worker site-packages escaped the controlled venv"
-rm -- "${WORK_DIR}/venv/bin/python"
-cat >"${WORK_DIR}/venv/bin/python" <<EOF
+cat >"${WORK_DIR}/worker-python" <<EOF
 #!/usr/bin/bash
 set -euo pipefail
 unset LD_PRELOAD
@@ -170,7 +169,7 @@ export VIRTUAL_ENV="${WORK_DIR}/venv"
 export PYTHONPATH="${worker_site_packages}"
 exec -a "${WORK_DIR}/venv/bin/python" "${worker_python_target}" "\$@"
 EOF
-chmod 700 "${WORK_DIR}/venv/bin/python"
+chmod 700 "${WORK_DIR}/worker-python"
 
 printf '%s\n' \
   'inference_address=http://127.0.0.1:8080' \
@@ -187,7 +186,11 @@ printf '%s\n' \
 export LOG_LOCATION="${WORK_DIR}/logs"
 cd "${WORK_DIR}"
 "${JAVA_HOME}/bin/java" -version >"${EVIDENCE_DIR}/java-version.txt" 2>&1
-env -u LD_PRELOAD JAVA_HOME="${JAVA_HOME}" "${WORK_DIR}/venv/bin/torchserve" \
+env -u LD_PRELOAD \
+  JAVA_HOME="${JAVA_HOME}" \
+  TS_WORKER_PYTHON="${WORK_DIR}/worker-python" \
+  "${WORK_DIR}/venv/bin/python" -c \
+  'import os, sys; sys.executable = os.environ["TS_WORKER_PYTHON"]; from ts.model_server import start; start()' \
   --start \
   --ncs \
   --model-store "${WORK_DIR}/model-store" \

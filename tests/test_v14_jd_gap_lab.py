@@ -249,6 +249,8 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         '"${JAVA_HOME}/bin/java" -version',
         "-Djdk.lang.Process.launchMechanism=FORK",
         "Java ProcessBuilder",
+        'TS_WORKER_PYTHON="${WORK_DIR}/worker-python"',
+        'sys.executable = os.environ["TS_WORKER_PYTHON"]',
         'exec -a "${WORK_DIR}/venv/bin/python"',
         'export PYTHONPATH="${worker_site_packages}"',
         ".torchserve-work-${SLURM_JOB_ID}",
