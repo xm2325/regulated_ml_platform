@@ -228,7 +228,7 @@ grep -q 'ts_' "${EVIDENCE_DIR}/torchserve-metrics.prom" \
 torchserve_version="$("${WORK_DIR}/venv/bin/torchserve" --version | awk '{print $NF}')"
 pytorch_version="$("${WORK_DIR}/venv/bin/python" -c 'import torch; print(torch.__version__)')"
 cuda_version="$("${WORK_DIR}/venv/bin/python" -c 'import torch; print(torch.version.cuda)')"
-java_version="$(java -version 2>&1 | head -n 1 | awk '{gsub(/"/, "", $3); print $3}')"
+java_version="$("${JAVA_HOME}/bin/java" -version 2>&1 | head -n 1 | awk '{gsub(/"/, "", $3); print $3}')"
 
 "${WORK_DIR}/venv/bin/python" "${WORK_DIR}/torchserve_smoke_tools.py" summarize \
   --response "${EVIDENCE_DIR}/response.json" \

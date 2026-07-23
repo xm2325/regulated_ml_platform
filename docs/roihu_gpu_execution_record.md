@@ -186,6 +186,49 @@ forbids automatic right-sizing and production-capacity claims, does not
 re-establish semantic parity, and cannot alter the parent `GPU_REJECTED`
 decision.
 
+## TorchServe compatibility result
+
+The v1.4 follow-up also implemented a bounded, offline TorchServe 0.12.0 GPU
+compatibility gate because the target JD names TorchServe. It did not relax the
+project's evidence policy: a healthy Java frontend was insufficient without a
+successful CUDA worker response.
+
+Preflight job `318733` completed the wheel install and confirmed PyTorch
+2.10.0+cu130, CUDA 13, the assigned GH200, TorchServe 0.12.0, and staged
+Temurin OpenJDK 25.0.1. Final job `319021` used exact source commit
+`79c7385eac9ef60211d49d5dca3b73a04afb5031`, moved both the virtual environment
+and temporary model extraction to project scratch, and forced Java's `FORK`
+process launcher. TorchServe answered its loopback `/ping`, but its Java process
+could not spawn the Python model worker:
+
+```text
+Exec failed, error: 107 (Transport endpoint is not connected)
+```
+
+The job recorded 28 worker-spawn errors and 28 HTTP 503 prediction responses,
+then failed closed after 2:56 as `FAILED 1:0`. No `summary.json` or
+`SMOKE_PASS` was emitted. This matters because the archived TorchServe project
+documents Java 17, whereas the available Roihu module/staged environment was
+Java 25; the experiment does not establish TorchServe inference compatibility.
+
+Retained checksums:
+
+- source archive:
+  `d110c0c83cd63996d1a87d9132f391b3dc60af5448efc4b2961850927c24f98c`;
+- TorchServe wheel:
+  `db127160102d29f390964f758b7ecc5039d3d278fafc85bf9994c273b3ef6954`;
+- staged JDK manifest:
+  `6a4a39d45a4900a0cb56113d684eb60b8be842383e0bcf31f1184359d4e5c053`;
+- job `319021` TorchServe log:
+  `dbaced0758f63b87bd18cbb63bdb0baf48e9fc2d3962f3751e9473bbcc1d60d4`;
+- job `319021` Slurm output:
+  `280a40c6fb7ad2955df23d20aff03478c4499d322a43ce9c11b1db311fcd12fe`.
+
+This is useful hands-on compatibility and diagnosis evidence, but it is not a
+TorchServe inference, throughput, security, maintenance, or production claim.
+The next legitimate experiment requires Java 17 in a controlled image or a
+maintained serving alternative.
+
 ## Fail-closed learning record
 
 The execution sequence also preserved these non-passing attempts:
@@ -202,6 +245,10 @@ The execution sequence also preserved these non-passing attempts:
 | `318645` | failed during profiled serving | Nsight exhausted the container's 63 MiB `/tmp`; moved profiler temporary data to project scratch and changed telemetry to an unbuffered append path |
 | `318663` | workload and profiling completed, finalisation failed | Nsight 2025.3 appended report identifiers to CSV filenames; changed finalisation to require exactly one matching kernel/API report and kept the failed evidence directory |
 | `318684`, `318690`, `318694` | smoke exercise passed | exact corrected source completed the one-, two-, and four-GH200 points; aggregate retained the formal rejection and production claim boundary |
+| `318733` | TorchServe preflight passed | offline wheels, staged Java, PyTorch/CUDA and the assigned GH200 were visible; no inference claim was made |
+| `318896`, `318976` | TorchServe failed closed | isolated Java visibility and process-execution assumptions before staging a project-local runtime |
+| `318999`, `319007` | bounded cancellation | frontend was ready, but worker spawn error 107 persisted across node-local temporary storage and Java's explicit `FORK` launcher |
+| `319021` | TorchServe failed closed | project-scratch work/temp paths still produced 28 worker spawn errors and 28 HTTP 503s; unsupported Java 25 compatibility remains unproved |
 
 This history is useful evidence of operational judgement: infrastructure
 readiness, higher throughput, or a green smoke result is insufficient when the

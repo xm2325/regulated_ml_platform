@@ -246,6 +246,7 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "--no-index --no-deps",
         "STAGED_JAVA_HOME",
         "staged OpenJDK file manifest verification failed",
+        '"${JAVA_HOME}/bin/java" -version',
         "-Djdk.lang.Process.launchMechanism=FORK",
         ".torchserve-work-${SLURM_JOB_ID}",
         "--max-time 3",

@@ -111,6 +111,15 @@ or change formal job `304890` from `GPU_REJECTED`. See the
 [execution record](docs/roihu_gpu_execution_record.md) for exact hashes,
 failed attempts, measurements, and interview prompts.
 
+The same lab also contains a fail-closed TorchServe 0.12.0 compatibility gate.
+On Roihu, the offline wheel and staged OpenJDK were hash-verified, PyTorch
+2.10/CUDA 13 detected the assigned GH200, and TorchServe's loopback Java
+frontend answered `/ping`. The backend worker nevertheless failed
+reproducibly because Roihu provides Java 25 while TorchServe documents Java 17:
+job `319021` recorded 28 failed worker spawns with Linux error 107 and 28 HTTP
+503 predictions before exiting `FAILED 1:0`. This is retained as negative
+compatibility evidence, not inference, performance, or production experience.
+
 ## v1.2: runtime batching and capacity evidence
 
 v1.1 proved that the calibrated model could run on a real Triton server. v1.2 tests what happens when requests overlap.

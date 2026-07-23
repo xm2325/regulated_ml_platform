@@ -137,6 +137,58 @@ Key retained evidence:
 - Nsight report from job `318684`, SHA-256
   `74f6126483587fb95c79b424f35df41e6798e5c7c6145256e0f60dada1e7dc41`.
 
+## Archived TorchServe compatibility gate
+
+The JD names TorchServe, so the lab also tested whether its final 0.12.0 release
+could run a bounded GPU inference smoke on Roihu. This is a compatibility
+investigation, not a recommendation to adopt TorchServe: the upstream
+[repository is archived](https://github.com/pytorch/serve), it states that
+maintenance is limited with no planned security fixes, and the official
+[troubleshooting guide requires Java 17](https://docs.pytorch.org/serve/Troubleshooting.html).
+Roihu exposed OpenJDK 25 rather than the documented Java version.
+
+The gate still established several facts under an offline, source-bound
+contract:
+
+- TorchServe and model-archiver 0.12.0 wheels installed with no network access;
+- PyTorch 2.10.0+cu130 detected the assigned GH200;
+- a staged Temurin OpenJDK 25.0.1 file manifest verified before execution;
+- the TorchServe Java frontend started on loopback and `/ping` returned;
+- token authorization was disabled only on loopback, while the management model
+  API remained disabled;
+- prediction success and CUDA execution were mandatory, so frontend readiness
+  alone could not produce `SMOKE_PASS`.
+
+Preflight job `318733` completed successfully. Runtime attempts then narrowed
+the incompatibility:
+
+| Job | Outcome | Finding |
+| ---: | --- | --- |
+| `318896` | fail closed | Java was not visible under the initial module assumption |
+| `318976` | fail closed | the module Java path was not executable from the TorchServe process |
+| `318999` | bounded cancellation | a staged project Java started the frontend, but the worker failed to spawn from node-local temporary storage |
+| `319007` | bounded cancellation | Java's explicit `FORK` launcher did not remove worker spawn error 107 |
+| `319021` | `FAILED 1:0` after 2:56 | project-scratch work and temp paths still produced 28 worker spawn error-107 events and 28 HTTP 503 predictions |
+
+Job `319021` used source commit
+`79c7385eac9ef60211d49d5dca3b73a04afb5031` and source archive SHA-256
+`d110c0c83cd63996d1a87d9132f391b3dc60af5448efc4b2961850927c24f98c`.
+The TorchServe wheel SHA-256 was
+`db127160102d29f390964f758b7ecc5039d3d278fafc85bf9994c273b3ef6954`;
+the staged JDK manifest SHA-256 was
+`6a4a39d45a4900a0cb56113d684eb60b8be842383e0bcf31f1184359d4e5c053`.
+The retained frontend log SHA-256 is
+`dbaced0758f63b87bd18cbb63bdb0baf48e9fc2d3962f3751e9473bbcc1d60d4`,
+and the Slurm output SHA-256 is
+`280a40c6fb7ad2955df23d20aff03478c4499d322a43ce9c11b1db311fcd12fe`.
+
+The correct claim is therefore: the candidate implemented and ran a
+fail-closed TorchServe compatibility gate, proved offline toolchain/frontend
+readiness, diagnosed an unsupported-Java worker-launch incompatibility, and did
+not claim GPU inference success. A future retry should use a supported Java 17
+runtime in a maintained image or replace the archived server; repeating the
+same Java 25/Roihu combination is not justified.
+
 ## Interview use
 
 The strongest answer is not “more GPUs were faster.” Explain:
