@@ -153,6 +153,7 @@ printf '%s\n' \
   'number_of_netty_threads=4' \
   'job_queue_size=32' \
   'async_logging=true' \
+  'vmargs=-Djdk.lang.Process.launchMechanism=FORK' \
   >"${WORK_DIR}/config.properties"
 
 export LOG_LOCATION="${WORK_DIR}/logs"

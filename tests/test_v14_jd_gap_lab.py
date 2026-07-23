@@ -246,6 +246,7 @@ def test_torchserve_sbatch_is_offline_loopback_and_claim_bounded():
         "--no-index --no-deps",
         "STAGED_JAVA_HOME",
         "staged OpenJDK file manifest verification failed",
+        "-Djdk.lang.Process.launchMechanism=FORK",
         "disable_token_authorization=true",
         "inference_address=http://127.0.0.1:8080",
         "metrics_address=http://127.0.0.1:8082",
