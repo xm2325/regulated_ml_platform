@@ -121,9 +121,15 @@ if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
   NODE_LOCAL_TMPDIR="$(realpath -e -- "${TMPDIR}")"
   [[ "${NODE_LOCAL_TMPDIR}" == /tmp/* ]] || fail "Slurm TMPDIR must be node-local /tmp"
   WORKER_LAUNCHER="${NODE_LOCAL_TMPDIR}/regulated-ml-worker-${SLURM_JOB_ID}"
+  WORKER_TMPDIR="${WORK_DIR}/tmp"
+else
+  NODE_LOCAL_TMPDIR="$(realpath -e -- "${TMPDIR}")"
+  [[ "${NODE_LOCAL_TMPDIR}" == /tmp/* ]] || fail "Slurm TMPDIR must be node-local /tmp"
+  WORKER_TMPDIR="${NODE_LOCAL_TMPDIR}/ts"
+  mkdir -m 700 -- "${WORKER_TMPDIR}"
 fi
-export TEMP="${WORK_DIR}/tmp"
-export TMPDIR="${WORK_DIR}/tmp"
+export TEMP="${WORKER_TMPDIR}"
+export TMPDIR="${WORKER_TMPDIR}"
 TELEMETRY_PID=""
 cleanup() {
   local return_code="$?"
