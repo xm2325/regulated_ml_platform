@@ -7,6 +7,7 @@ on:
       - ".github/workflows/platform.yml"
       - "config/roihu_gpu_evidence_policy.yaml"
       - "docs/roihu_gpu_evidence.md"
+      - "docs/roihu_jd_gap_lab.md"
       - "hpc/roihu/**"
       - "helm/regulated-ai/**"
       - "scripts/prepare_roihu_source_bundle.sh"
@@ -16,6 +17,7 @@ on:
       - "tests/test_v13_roihu_bundle.py"
       - "tests/test_v13_roihu_gpu_evidence.py"
       - "tests/test_v13_roihu_runtime.py"
+      - "tests/test_v14_jd_gap_lab.py"
       - "requirements*.txt"
       - "pyproject.toml"
   push:
@@ -25,6 +27,7 @@ on:
       - ".github/workflows/platform.yml"
       - "config/roihu_gpu_evidence_policy.yaml"
       - "docs/roihu_gpu_evidence.md"
+      - "docs/roihu_jd_gap_lab.md"
       - "hpc/roihu/**"
       - "helm/regulated-ai/**"
       - "scripts/prepare_roihu_source_bundle.sh"
@@ -34,6 +37,7 @@ on:
       - "tests/test_v13_roihu_bundle.py"
       - "tests/test_v13_roihu_gpu_evidence.py"
       - "tests/test_v13_roihu_runtime.py"
+      - "tests/test_v14_jd_gap_lab.py"
       - "requirements*.txt"
       - "pyproject.toml"
   workflow_dispatch:
@@ -77,19 +81,21 @@ jobs:
             tests/test_v13_gpu_workflow.py \
             tests/test_v13_roihu_bundle.py \
             tests/test_v13_roihu_gpu_evidence.py \
-            tests/test_v13_roihu_runtime.py
+            tests/test_v13_roihu_runtime.py \
+            tests/test_v14_jd_gap_lab.py
           ruff format --check \
             src/operations/roihu_gpu_evidence.py \
             tests/test_v13_gpu_platform.py \
             tests/test_v13_gpu_workflow.py \
             tests/test_v13_roihu_bundle.py \
             tests/test_v13_roihu_gpu_evidence.py \
-            tests/test_v13_roihu_runtime.py
+            tests/test_v13_roihu_runtime.py \
+            tests/test_v14_jd_gap_lab.py
           bash -n scripts/prepare_roihu_source_bundle.sh
           bash -n hpc/roihu/prepare_onnx_wheelhouse.sh
           find hpc/roihu -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           find hpc/roihu -type f -name '*.sbatch' -print0 | xargs -0 -r -n1 bash -n
-      - name: Validate v1.3 evidence policy and fail-closed CLI contract
+      - name: Validate v1.3 and v1.4 fail-closed evidence contracts
         run: |
           set -euo pipefail
           python -m src.operations.roihu_gpu_evidence --help
@@ -98,7 +104,8 @@ jobs:
             tests/test_v13_gpu_workflow.py \
             tests/test_v13_roihu_bundle.py \
             tests/test_v13_roihu_gpu_evidence.py \
-            tests/test_v13_roihu_runtime.py
+            tests/test_v13_roihu_runtime.py \
+            tests/test_v14_jd_gap_lab.py
       - name: Build immutable source-bundle contract
         run: |
           set -euo pipefail
