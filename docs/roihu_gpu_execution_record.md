@@ -129,6 +129,108 @@ therefore correctly leaves:
 Decision SHA-256:
 `4e12703fdcd62a0d1ea5ef3d8dad050884f1059f091fea95a5089e4d4ea392ee`
 
+## v1.4 profiling and same-node scaling exercise
+
+The follow-up lab answered a narrower engineering question without changing the
+formal decision: how does the rejected synthetic TensorRT plan behave under
+Nsight profiling and one, two, and four independent Triton instances on one
+Roihu GH200 node?
+
+Exact runtime source:
+
+- commit: `17ce7f9ae7eb104eb7c95c02cf6e5dff560c909f`;
+- source archive SHA-256:
+  `5edf8c27494a8d3357255eedfa2ede2386a58b25fb653a215aa3374977d56589`;
+- parent plan SHA-256:
+  `46f414ab796163f2e269e07b802735b0ef853e4fe8260c89bac33eeeb2c13abd`;
+- GitHub Roihu contract:
+  [run 30009063991](https://github.com/xm2325/regulated_ml_platform/actions/runs/30009063991).
+
+Each `gputest` job used 72 Grace CPU cores per GH200, one loopback-only Triton
+server per GPU, batch 64, concurrency 4 per server, and 200 ms GPU telemetry.
+All three jobs completed `0:0`:
+
+| GPUs | Job | Elapsed | Total infer/s | Speedup | Efficiency | Worst p95 | Mean GPU util |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | `318684` | 1:53 | 396,132 | 1.000x | 100.0% | 0.736 ms | 44.57% |
+| 2 | `318690` | 0:38 | 873,294 | 2.205x | 110.23% | 0.598 ms | 48.58% |
+| 4 | `318694` | 0:41 | 1,608,875 | 4.061x | 101.54% | 0.987 ms | 45.92% |
+
+The apparent super-linear efficiencies are not a production conclusion: these
+are short independent smoke points and do not control cache state, placement,
+thermal state, or representative traffic. The four-server result also ranged
+from 357,815 to 430,602 infer/s per GPU and had the highest worst-server p95,
+which is a reason to investigate placement and load balance before any capacity
+claim.
+
+The one-GPU Nsight trace retained 232,527 instances of the main TensorRT GEMM
+kernel and the same number of split-K instances. The main GEMM accounted for
+78.6% of captured CUDA kernel time and split-K for 16.4%. In the CUDA API
+summary, event synchronisation represented 36.8% of captured API time, kernel
+launches 29.6%, and asynchronous copies 13.1%. Peak allocated GPU memory was
+731 MiB out of 97,871 MiB. The practical diagnosis is many small GEMM launches
+with meaningful synchronisation/transfer overhead, not a memory-capacity
+bottleneck.
+
+Retained receipts:
+
+- aggregate SHA-256:
+  `f397fb8ad1b4adc7b6ddceadcda02fe8d58bb3be992e0c426622ebbdbb3ff7ba`;
+- `sacct` receipt SHA-256:
+  `1d3d8d2e7687b0f405b0c5a208b76892521683b538ce3118f7e3386f4bd4d1a4`;
+- one-GPU Nsight report SHA-256:
+  `74f6126483587fb95c79b424f35df41e6798e5c7c6145256e0f60dada1e7dc41`.
+
+The aggregate status is `PASS` for this `SMOKE_ONLY` exercise. It explicitly
+forbids automatic right-sizing and production-capacity claims, does not
+re-establish semantic parity, and cannot alter the parent `GPU_REJECTED`
+decision.
+
+## TorchServe compatibility result
+
+The v1.4 follow-up implemented a bounded, offline TorchServe 0.12.0 GPU
+compatibility gate because the target JD names TorchServe. It did not relax the
+project's evidence policy: frontend health was insufficient without a CUDA
+response, external GPU telemetry, Prometheus metrics, immutable inputs, and a
+successful Slurm state.
+
+Host-module attempts through job `319963` preserved error 107 as negative
+evidence. Exact Temurin 17 host job `319828` showed that changing Java alone was
+insufficient. The passing path isolated Java 17 and TorchServe in a hash-locked
+NVIDIA PyTorch ARM64 SIF, kept the interface loopback-only, installed the two
+verified wheels without network access, and used node-local short Unix sockets.
+
+Job `321067` used source commit
+`ce6060264764beb07100976ac7608f71dd66cfd3` and completed `0:0` in 22 seconds.
+It produced 40 HTTP 200 predictions. The retained response reported batch 256,
+`device=cuda`, and output shape `[256,16]`. Prometheus recorded
+`ts_inference_requests_total=40`; 13 `nvidia-smi` samples confirmed one NVIDIA
+GH200 120GB and 797 MiB peak memory use. Runtime versions were TorchServe
+0.12.0, Java 17.0.19, PyTorch 2.3.0a0+ebedce2, and CUDA 12.3.
+
+Retained checksums:
+
+- source archive:
+  `835c930ac5f2b5691fa2915d2019c5230a487ff417f8e6014c1877d291e2d24e`;
+- PyTorch SIF:
+  `9b224b3d66800174e34f375d4fc17086d66b929f1870136d5ab79ecea2797cb5`;
+- TorchServe wheel:
+  `db127160102d29f390964f758b7ecc5039d3d278fafc85bf9994c273b3ef6954`;
+- model-archiver wheel:
+  `baaf66065396c3512030b3b2c57cce333edab9fffe9e528352cb4cc291645a78`;
+- staged JDK manifest:
+  `63e3e87582d1f25e012f08fb391dcb9ba454b51b19d06051a62ac089d2b0d455`;
+- passing summary:
+  `b0a4e0d77eea5dd65dd812c1d504950caf9faac691e4c527a67ff44f1a21bfcd`;
+- Prometheus metrics:
+  `b5d6ef4e4ee4aad0075c178ea965d746a956d557538e0fbe86576b08e0639f8b`;
+- Slurm output:
+  `d839e3bfb6c5ae801a0e3fc12e79f9cf879742db08586f614226badb918b8e34`.
+
+This proves a synthetic Java 17/TorchServe/CUDA compatibility smoke, not
+throughput, security approval, maintenance suitability, production capacity,
+production operation, or a recommendation to adopt the archived server.
+
 ## Fail-closed learning record
 
 The execution sequence also preserved these non-passing attempts:
@@ -142,6 +244,16 @@ The execution sequence also preserved these non-passing attempts:
 | `304737`, `304764` | failed after target-side build/READY | a Slurm step could not import the workload; replaced environment-dependent lookup with an attested sibling-path import and added an actual-entrypoint preflight |
 | `304754` | failed before execution | submission came from the login home rather than project scratch; resubmitted from the required controlled path |
 | `304890` + `304891` | runtime pass, governed rejection | full evidence completed; validator rejected the inefficient latency/utilization profile and prevented promotion |
+| `318645` | failed during profiled serving | Nsight exhausted the container's 63 MiB `/tmp`; moved profiler temporary data to project scratch and changed telemetry to an unbuffered append path |
+| `318663` | workload and profiling completed, finalisation failed | Nsight 2025.3 appended report identifiers to CSV filenames; changed finalisation to require exactly one matching kernel/API report and kept the failed evidence directory |
+| `318684`, `318690`, `318694` | smoke exercise passed | exact corrected source completed the one-, two-, and four-GH200 points; aggregate retained the formal rejection and production claim boundary |
+| `318733` | TorchServe preflight passed | offline wheels, staged Java, PyTorch/CUDA and the assigned GH200 were visible; no inference claim was made |
+| `318896`, `318976` | TorchServe failed closed | isolated Java visibility and process-execution assumptions before staging a project-local runtime |
+| `318999`, `319007` | bounded cancellation | frontend was ready, but worker spawn error 107 persisted across node-local temporary storage and Java's explicit `FORK` launcher |
+| `319021`, `319828`, `319942`, `319956`, `319963` | TorchServe failed closed | host paths retained error 107; exact Java 17 alone did not cross the host Java/Python worker boundary |
+| `320648`, `320655` | TorchServe failed closed | container isolation exposed missing `ensurepip` and non-portable console-script layout assumptions |
+| `320679`, `320867`, `320871` | controlled diagnosis | fixed AF_UNIX path length, handler initialization, and explicit Prometheus mode; the last attempt completed 40 CUDA predictions but still failed the empty-metrics gate |
+| `321067` | TorchServe `SMOKE_PASS` | exact Java 17 Apptainer path completed health, 40 CUDA predictions, GH200 telemetry, Prometheus metrics, hashes, and Slurm `COMPLETED 0:0` |
 
 This history is useful evidence of operational judgement: infrastructure
 readiness, higher throughput, or a green smoke result is insufficient when the

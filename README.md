@@ -88,6 +88,39 @@ The Kubernetes contract is separate from Roihu. GPU Deployments require `GPU_ELI
 
 See [`docs/roihu_gpu_evidence.md`](docs/roihu_gpu_evidence.md) for the execution and interview-practice runbook.
 
+## v1.4: governed profiling and same-node GH200 scaling
+
+v1.4 adds a source-bound, offline Roihu exercise for the formal job's rejected
+TensorRT plan. It profiles one GH200 with Nsight Systems, then compares one, two,
+and four independent loopback Triton instances on a single node. Each point
+keeps one server and one Perf Analyzer client per GPU, 72 Grace CPU cores per
+GH200, batch 64, concurrency 4, and 200 ms GPU telemetry.
+
+The exact runtime commit `17ce7f9ae7eb104eb7c95c02cf6e5dff560c909f`
+completed jobs `318684`, `318690`, and `318694` at `0:0`. Observed total
+throughput was 396,132, 873,294, and 1,608,875 infer/s respectively. The
+four-GPU point reached 4.061x the one-GPU throughput, but had the highest
+worst-server p95 (0.987 ms) and visible per-server imbalance. Nsight attributed
+95.0% of captured CUDA kernel time to the main GEMM and its split-K kernel, while
+event synchronisation and launch calls dominated captured CUDA API time.
+
+These are deliberately `SMOKE_ONLY` observations. They do not re-establish
+semantic parity, authorize production capacity, prove Kubernetes GPU operation,
+or change formal job `304890` from `GPU_REJECTED`. See the
+[profiling/right-sizing lab](docs/roihu_jd_gap_lab.md) and
+[execution record](docs/roihu_gpu_execution_record.md) for exact hashes,
+failed attempts, measurements, and interview prompts.
+
+The same lab also contains a fail-closed TorchServe 0.12.0 compatibility gate.
+Host-module attempts retained the reproducible Java/Python worker error 107 as
+negative evidence. The governed path then isolated Temurin 17.0.19 and the
+archived server inside a hash-locked NVIDIA PyTorch ARM64 Apptainer image.
+Exact-source job `321067` completed `0:0`: loopback health, 40 HTTP 200
+predictions, a CUDA handler response for batch 256, GH200 telemetry, and
+Prometheus metrics all passed. This is a synthetic compatibility smoke only,
+not a benchmark, security approval, maintained-runtime recommendation,
+production-capacity result, or TorchServe production-operations claim.
+
 ## v1.2: runtime batching and capacity evidence
 
 v1.1 proved that the calibrated model could run on a real Triton server. v1.2 tests what happens when requests overlap.
