@@ -100,7 +100,12 @@ mapfile -t gpu_identity < <(
   || fail "exactly one GH200 is required"
 printf '%s\n' "${gpu_identity[0]}" >"${EVIDENCE_DIR}/gpu-identity.csv"
 
-WORK_DIR="$(mktemp -d -- "${TMPDIR%/}/regulated-ml-ts-${SLURM_JOB_ID}.XXXXXX")"
+WORK_DIR="${EVIDENCE_ROOT}/.torchserve-work-${SLURM_JOB_ID}"
+[[ ! -e "${WORK_DIR}" ]] || fail "refusing to reuse a TorchServe work directory"
+mkdir -m 700 -- "${WORK_DIR}"
+mkdir -m 700 -- "${WORK_DIR}/tmp"
+export TEMP="${WORK_DIR}/tmp"
+export TMPDIR="${WORK_DIR}/tmp"
 TELEMETRY_PID=""
 cleanup() {
   local return_code="$?"
@@ -169,7 +174,8 @@ env -u LD_PRELOAD JAVA_HOME="${JAVA_HOME}" "${WORK_DIR}/venv/bin/torchserve" \
 
 ready=0
 for _ in $(seq 1 60); do
-  if curl --fail --silent http://127.0.0.1:8080/ping \
+  if curl --fail --silent --max-time 3 \
+    http://127.0.0.1:8080/ping \
     >"${EVIDENCE_DIR}/ping.json"; then
     ready=1
     break
@@ -190,6 +196,7 @@ TELEMETRY_PID="$!"
 prediction_ready=0
 for _ in $(seq 1 60); do
   if curl --fail --silent \
+    --max-time 3 \
     --header 'Content-Type: application/json' \
     --data '{"batch":256}' \
     http://127.0.0.1:8080/predictions/regulated_smoke \
@@ -202,6 +209,7 @@ done
 [[ "${prediction_ready}" -eq 1 ]] || fail "TorchServe model worker readiness deadline exceeded"
 for _ in $(seq 1 39); do
   curl --fail --silent \
+    --max-time 3 \
     --header 'Content-Type: application/json' \
     --data '{"batch":256}' \
     http://127.0.0.1:8080/predictions/regulated_smoke \
@@ -212,7 +220,7 @@ kill "${TELEMETRY_PID}" >/dev/null 2>&1
 wait "${TELEMETRY_PID}" >/dev/null 2>&1 || true
 TELEMETRY_PID=""
 
-curl --fail --silent http://127.0.0.1:8082/metrics \
+curl --fail --silent --max-time 3 http://127.0.0.1:8082/metrics \
   >"${EVIDENCE_DIR}/torchserve-metrics.prom"
 grep -q 'ts_' "${EVIDENCE_DIR}/torchserve-metrics.prom" \
   || fail "TorchServe emitted no metrics"
