@@ -14,6 +14,8 @@
 set -euo pipefail
 umask 077
 
+TORCHSERVE_RUNTIME_MODE="${TORCHSERVE_RUNTIME_MODE:-host}"
+
 fail() {
   printf 'Roihu TorchServe smoke failed closed: %s\n' "$1" >&2
   exit 1
@@ -28,6 +30,10 @@ for variable in \
   [[ -n "${!variable:-}" ]] || fail "required environment variable ${variable} is not set"
 done
 
+case "${TORCHSERVE_RUNTIME_MODE}" in
+  host|apptainer) ;;
+  *) fail "TORCHSERVE_RUNTIME_MODE must be host or apptainer" ;;
+esac
 [[ "${SLURM_JOB_ACCOUNT}" =~ ^project_[0-9]+$ ]] || fail "invalid project account"
 [[ "${SLURM_JOB_PARTITION}" == "gputest" ]] || fail "TorchServe smoke must use gputest"
 [[ "${SLURM_CPUS_PER_TASK}" -eq 72 ]] || fail "one full GH200 requires 72 Grace CPU cores"
@@ -81,12 +87,18 @@ EVIDENCE_DIR="${EVIDENCE_ROOT}/torchserve-smoke-${SLURM_JOB_ID}"
 [[ ! -e "${EVIDENCE_DIR}" ]] || fail "refusing to overwrite evidence"
 mkdir -m 700 -- "${EVIDENCE_DIR}"
 
-export CSC_ENV_INIT_NON_INTERACTIVE=yes
-set +u
-source /etc/profile.d/zz-csc-env.sh
-set -u
-module --force purge
-module load python-pytorch/2.10
+if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
+  export CSC_ENV_INIT_NON_INTERACTIVE=yes
+  set +u
+  source /etc/profile.d/zz-csc-env.sh
+  set -u
+  module --force purge
+  module load python-pytorch/2.10
+  PYTHON_BIN="$(command -v python3)"
+else
+  PYTHON_BIN="/usr/bin/python"
+  [[ -x "${PYTHON_BIN}" ]] || fail "Apptainer Python is unavailable"
+fi
 export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
 JAVA_HOME="${STAGED_JAVA_HOME}"
 export JAVA_HOME
@@ -104,9 +116,12 @@ WORK_DIR="${EVIDENCE_ROOT}/.torchserve-work-${SLURM_JOB_ID}"
 [[ ! -e "${WORK_DIR}" ]] || fail "refusing to reuse a TorchServe work directory"
 mkdir -m 700 -- "${WORK_DIR}"
 mkdir -m 700 -- "${WORK_DIR}/tmp"
-NODE_LOCAL_TMPDIR="$(realpath -e -- "${TMPDIR}")"
-[[ "${NODE_LOCAL_TMPDIR}" == /tmp/* ]] || fail "Slurm TMPDIR must be node-local /tmp"
-WORKER_LAUNCHER="${NODE_LOCAL_TMPDIR}/regulated-ml-worker-${SLURM_JOB_ID}"
+WORKER_LAUNCHER=""
+if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
+  NODE_LOCAL_TMPDIR="$(realpath -e -- "${TMPDIR}")"
+  [[ "${NODE_LOCAL_TMPDIR}" == /tmp/* ]] || fail "Slurm TMPDIR must be node-local /tmp"
+  WORKER_LAUNCHER="${NODE_LOCAL_TMPDIR}/regulated-ml-worker-${SLURM_JOB_ID}"
+fi
 export TEMP="${WORK_DIR}/tmp"
 export TMPDIR="${WORK_DIR}/tmp"
 TELEMETRY_PID=""
@@ -121,7 +136,9 @@ cleanup() {
   if [[ -x "${WORK_DIR}/venv/bin/torchserve" ]]; then
     env -u LD_PRELOAD "${WORK_DIR}/venv/bin/torchserve" --stop >/dev/null 2>&1
   fi
-  rm -f -- "${WORKER_LAUNCHER}"
+  if [[ -n "${WORKER_LAUNCHER}" ]]; then
+    rm -f -- "${WORKER_LAUNCHER}"
+  fi
   cp -a -- "${WORK_DIR}/logs" "${EVIDENCE_DIR}/" 2>/dev/null
   rm -rf -- "${WORK_DIR}"
   exit "${return_code}"
@@ -133,10 +150,10 @@ for source_file in torchserve_smoke_tools.py torchserve_smoke_handler.py; do
   tar -xOzf "${SOURCE_ARCHIVE}" \
     "${archive_root}/hpc/roihu/${source_file}" >"${WORK_DIR}/${source_file}"
 done
-python3 "${WORK_DIR}/torchserve_smoke_tools.py" --help \
+"${PYTHON_BIN}" "${WORK_DIR}/torchserve_smoke_tools.py" --help \
   >"${EVIDENCE_DIR}/tools-help.txt"
 
-python3 -m venv --system-site-packages "${WORK_DIR}/venv"
+"${PYTHON_BIN}" -m venv --system-site-packages "${WORK_DIR}/venv"
 "${WORK_DIR}/venv/bin/python" -m pip install \
   --disable-pip-version-check --no-index --no-deps \
   "${TORCHSERVE_WHEEL}" "${MODEL_ARCHIVER_WHEEL}" \
@@ -153,19 +170,19 @@ mkdir -p -- "${WORK_DIR}/model-store" "${WORK_DIR}/logs"
   --export-path "${WORK_DIR}/model-store" \
   --force
 
-# Roihu's module Python resolves through /appl on Lustre. Java ProcessBuilder
-# cannot exec that interpreter directly on a compute node and returns Linux
-# error 107. Keep the exact interpreter and venv site-packages, but pass a
-# controlled node-local shell wrapper to TorchServe's Java --python argument.
-worker_python_target="$(readlink -f -- "${WORK_DIR}/venv/bin/python")"
-worker_site_packages="$(
-  "${WORK_DIR}/venv/bin/python" -c \
-    'import sysconfig; print(sysconfig.get_paths()["purelib"])'
-)"
-[[ -x "${worker_python_target}" ]] || fail "resolved worker Python is not executable"
-[[ "${worker_site_packages}" == "${WORK_DIR}/venv/"* ]] \
-  || fail "worker site-packages escaped the controlled venv"
-cat >"${WORKER_LAUNCHER}" <<EOF
+if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
+  # Roihu's module Python resolves through /appl on Lustre. Keep the host-mode
+  # compatibility launcher for diagnosis; the governed passing path uses the
+  # isolated ARM64 PyTorch Apptainer runtime.
+  worker_python_target="$(readlink -f -- "${WORK_DIR}/venv/bin/python")"
+  worker_site_packages="$(
+    "${WORK_DIR}/venv/bin/python" -c \
+      'import sysconfig; print(sysconfig.get_paths()["purelib"])'
+  )"
+  [[ -x "${worker_python_target}" ]] || fail "resolved worker Python is not executable"
+  [[ "${worker_site_packages}" == "${WORK_DIR}/venv/"* ]] \
+    || fail "worker site-packages escaped the controlled venv"
+  cat >"${WORKER_LAUNCHER}" <<EOF
 #!/usr/bin/bash
 set -euo pipefail
 unset LD_PRELOAD
@@ -173,8 +190,9 @@ export VIRTUAL_ENV="${WORK_DIR}/venv"
 export PYTHONPATH="${worker_site_packages}"
 exec -a "${WORK_DIR}/venv/bin/python" "${worker_python_target}" "\$@"
 EOF
-chmod 700 "${WORKER_LAUNCHER}"
-sha256sum "${WORKER_LAUNCHER}" >"${EVIDENCE_DIR}/worker-launcher.sha256"
+  chmod 700 "${WORKER_LAUNCHER}"
+  sha256sum "${WORKER_LAUNCHER}" >"${EVIDENCE_DIR}/worker-launcher.sha256"
+fi
 
 printf '%s\n' \
   'inference_address=http://127.0.0.1:8080' \
@@ -185,23 +203,37 @@ printf '%s\n' \
   'number_of_netty_threads=4' \
   'job_queue_size=32' \
   'async_logging=true' \
-  'vmargs=-Djdk.lang.Process.launchMechanism=FORK' \
   >"${WORK_DIR}/config.properties"
+if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
+  printf '%s\n' 'vmargs=-Djdk.lang.Process.launchMechanism=FORK' \
+    >>"${WORK_DIR}/config.properties"
+fi
 
 export LOG_LOCATION="${WORK_DIR}/logs"
 cd "${WORK_DIR}"
 "${JAVA_HOME}/bin/java" -version >"${EVIDENCE_DIR}/java-version.txt" 2>&1
-env -u LD_PRELOAD \
-  JAVA_HOME="${JAVA_HOME}" \
-  TS_WORKER_PYTHON="${WORKER_LAUNCHER}" \
-  "${WORK_DIR}/venv/bin/python" -c \
-  'import os, sys; sys.executable = os.environ["TS_WORKER_PYTHON"]; from ts.model_server import start; start()' \
-  --start \
-  --ncs \
-  --model-store "${WORK_DIR}/model-store" \
-  --models regulated_smoke=regulated_smoke.mar \
-  --ts-config "${WORK_DIR}/config.properties" \
-  >"${EVIDENCE_DIR}/torchserve-start.log" 2>&1
+if [[ "${TORCHSERVE_RUNTIME_MODE}" == "host" ]]; then
+  env -u LD_PRELOAD \
+    JAVA_HOME="${JAVA_HOME}" \
+    TS_WORKER_PYTHON="${WORKER_LAUNCHER}" \
+    "${WORK_DIR}/venv/bin/python" -c \
+    'import os, sys; sys.executable = os.environ["TS_WORKER_PYTHON"]; from ts.model_server import start; start()' \
+    --start \
+    --ncs \
+    --model-store "${WORK_DIR}/model-store" \
+    --models regulated_smoke=regulated_smoke.mar \
+    --ts-config "${WORK_DIR}/config.properties" \
+    >"${EVIDENCE_DIR}/torchserve-start.log" 2>&1
+else
+  env -u LD_PRELOAD JAVA_HOME="${JAVA_HOME}" \
+    "${WORK_DIR}/venv/bin/torchserve" \
+    --start \
+    --ncs \
+    --model-store "${WORK_DIR}/model-store" \
+    --models regulated_smoke=regulated_smoke.mar \
+    --ts-config "${WORK_DIR}/config.properties" \
+    >"${EVIDENCE_DIR}/torchserve-start.log" 2>&1
+fi
 
 ready=0
 for _ in $(seq 1 60); do
